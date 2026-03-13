@@ -1,0 +1,19 @@
+
+{
+  "framework": "vite",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/privacy.html", "destination": "/privacy.html" },
+    { "source": "/delete-account", "destination": "/delete-account.html" },
+    { "source": "/delete-account.html", "destination": "/delete-account.html" },
+    { "source": "/((?!api/.*|.*\\..*).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}

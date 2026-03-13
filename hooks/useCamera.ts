@@ -1,0 +1,409 @@
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
+import { useLanguage } from '../contexts/LanguageContext';
+
+export const useCamera = () => {
+  const { t } = useLanguage();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [error, setError] = useState<string>('');
+  const [isCapturing, setIsCapturing] = useState(false);
+  const lastCaptureTime = useRef<number>(0);
+  const mountedRef = useRef(true);
+  
+  // Camera Capabilities State
+  const [hasTorch, setHasTorch] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  
+  // Zoom State
+  const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
+  const [maxZoom, setMaxZoom] = useState(1);
+  const [supportsZoom, setSupportsZoom] = useState(false);
+
+  // Exposure State (New)
+  const [exposure, setExposure] = useState(0);
+  const [minExposure, setMinExposure] = useState(0);
+  const [maxExposure, setMaxExposure] = useState(0);
+  const [supportsExposure, setSupportsExposure] = useState(false);
+
+  // Multi-Camera State
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
+
+  // Helper to stop all tracks on a stream
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        // Explicitly remove track to ensure Android releases the camera
+        streamRef.current?.removeTrack(track); 
+      });
+      streamRef.current = null;
+    }
+  }, []);
+
+  // Discover available cameras
+  const discoverCameras = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        // Filter for back cameras generally, or take all if facing mode not supported
+        const backCameras = videoDevices.filter(d => 
+            d.label.toLowerCase().includes('back') || 
+            d.label.toLowerCase().includes('environment') ||
+            d.label.toLowerCase().includes('rear') ||
+            (videoDevices.length > 1 && !d.label.toLowerCase().includes('front'))
+        );
+
+        if (backCameras.length > 1) {
+            setAvailableCameras(backCameras);
+        }
+    } catch (e) {
+        console.warn("Error discovering cameras", e);
+    }
+  };
+
+  const startCamera = useCallback(async (deviceId?: string) => {
+    setError('');
+    
+    if (!mountedRef.current) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const permissions = await Camera.checkPermissions();
+        if (permissions.camera !== 'granted') {
+             const request = await Camera.requestPermissions();
+             if (request.camera !== 'granted' && request.camera !== 'limited') {
+                 setError(t.cameraPermissionError || 'Please grant camera permission from phone settings to use the app.');
+                 return;
+             }
+        }
+      } catch (e) {
+        console.warn("Native permission request failed", e);
+      }
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (Capacitor.isNativePlatform()) {
+        setError(t.cameraLiveError || 'Unable to open live camera. Please use "System Camera" button.');
+      } else {
+        setError(t.cameraBrowserError || 'Browser does not support live camera.');
+      }
+      return;
+    }
+
+    stopStream();
+
+    const getConstraints = (mode: 'environment' | 'user' | 'any', specificDeviceId?: string): MediaStreamConstraints => {
+        const baseVideo: MediaTrackConstraints = {
+            width: { ideal: 1920 }, 
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
+        };
+
+        if (specificDeviceId) {
+            return { video: { ...baseVideo, deviceId: { exact: specificDeviceId } }, audio: false };
+        }
+
+        if (mode === 'any') {
+            return { video: baseVideo, audio: false };
+        }
+
+        return { 
+            video: { 
+                ...baseVideo, 
+                facingMode: mode 
+            }, 
+            audio: false 
+        };
+    };
+
+    try {
+        let stream: MediaStream | null = null;
+        
+        if (deviceId) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(getConstraints('any', deviceId));
+            } catch (deviceErr) {
+                console.warn("Specific device camera failed, falling back to default", deviceErr);
+                // Fallback to default behavior if specific device fails
+                stream = null;
+            }
+        }
+        
+        if (!stream) {
+            try {
+                // Try environment (back) camera first
+                stream = await navigator.mediaDevices.getUserMedia(getConstraints('environment'));
+            } catch (envErr) {
+                console.warn("Environment camera failed, trying user camera", envErr);
+                try {
+                    // Try user (front) camera
+                    stream = await navigator.mediaDevices.getUserMedia(getConstraints('user'));
+                } catch (userErr) {
+                    console.warn("User camera failed, trying any camera", userErr);
+                    try {
+                        // Try any camera with ideal constraints
+                        stream = await navigator.mediaDevices.getUserMedia(getConstraints('any'));
+                    } catch (anyErr) {
+                        console.warn("Any camera with constraints failed, trying bare minimum", anyErr);
+                        // Absolute last resort: bare minimum constraints
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    }
+                }
+            }
+        }
+
+        if (!stream) throw new Error("No camera stream obtained");
+      
+      if (!mountedRef.current) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(e => {
+             if (mountedRef.current) console.warn("Video play interrupted:", e);
+        });
+      }
+
+      // --- ISP BALANCED TUNING & ZOOM & EXPOSURE ---
+      try {
+        const track = stream.getVideoTracks()[0];
+        const capabilities = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+        const advancedConstraints: any = [];
+
+        // Torch Support
+        setHasTorch(!!capabilities.torch);
+
+        // Zoom Support
+        if (capabilities.zoom) {
+            setSupportsZoom(true);
+            setMinZoom(capabilities.zoom.min || 1);
+            setMaxZoom(capabilities.zoom.max || 1);
+            setZoom(capabilities.zoom.min || 1); 
+        } else {
+            setSupportsZoom(false);
+        }
+
+        // Exposure Compensation Support
+        if (capabilities.exposureCompensation) {
+            setSupportsExposure(true);
+            setMinExposure(capabilities.exposureCompensation.min);
+            setMaxExposure(capabilities.exposureCompensation.max);
+            setExposure(capabilities.exposureCompensation.min + (capabilities.exposureCompensation.max - capabilities.exposureCompensation.min) / 2); // Set to middle initially
+        } else {
+            setSupportsExposure(false);
+        }
+
+        // Auto Focus/Exposure/White Balance preferences
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+           advancedConstraints.push({ focusMode: 'continuous' });
+        }
+        // If we support exposure comp, we might still want continuous mode as base
+        if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
+           advancedConstraints.push({ exposureMode: 'continuous' });
+        }
+        if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
+            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+        }
+
+        if (advancedConstraints.length > 0) {
+            await track.applyConstraints({ advanced: advancedConstraints });
+        }
+      } catch (e) {
+        console.warn("ISP optimization failed", e);
+      }
+
+    } catch (err: any) {
+      console.error("Camera start failed:", err);
+      if (!mountedRef.current) return;
+      
+      let errorMessage = t.cameraAccessError || 'Unable to access the camera. Please check permissions or use another device.';
+      
+      if (err && err.name === 'NotFoundError') {
+          errorMessage = t.cameraNotFoundError || 'No camera found on this device.';
+      } else if (err && err.name === 'NotAllowedError') {
+          errorMessage = t.cameraPermissionError || 'Camera access denied. Please grant permissions.';
+      }
+      
+      setError(errorMessage);
+    }
+  }, [stopStream, t]);
+
+  const openNativeCamera = async (onCapture: (imageSrc: string) => void) => {
+    stopStream();
+    try {
+      const image = await Camera.getPhoto({
+        quality: 100,
+        allowEditing: false,
+        resultType: CameraResultType.Uri, 
+        source: CameraSource.Camera,
+        correctOrientation: true, 
+        saveToGallery: false,
+      });
+
+      if (image.webPath) {
+        const response = await fetch(image.webPath);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          onCapture(reader.result as string);
+        };
+        reader.readAsDataURL(blob);
+      }
+    } catch (e) {
+      console.log('Native camera cancelled', e);
+    } finally {
+      if (mountedRef.current) {
+          startCamera();
+      }
+    }
+  };
+
+  const cleanupCamera = useCallback(() => {
+    stopStream();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, [stopStream]);
+
+  const toggleTorch = useCallback(async () => {
+    if (!streamRef.current || !hasTorch) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !isTorchOn }] as any });
+      setIsTorchOn(!isTorchOn);
+    } catch (e) {
+      console.error("Torch toggle failed", e);
+    }
+  }, [hasTorch, isTorchOn]);
+
+  const setZoomLevel = useCallback(async (zoomValue: number) => {
+      if (!streamRef.current || !supportsZoom) return;
+      const track = streamRef.current.getVideoTracks()[0];
+      try {
+          await track.applyConstraints({ advanced: [{ zoom: zoomValue }] as any });
+          setZoom(zoomValue);
+      } catch (e) {
+          console.error("Zoom failed", e);
+      }
+  }, [supportsZoom]);
+
+  const setExposureLevel = useCallback(async (exposureValue: number) => {
+      if (!streamRef.current || !supportsExposure) return;
+      const track = streamRef.current.getVideoTracks()[0];
+      try {
+          await track.applyConstraints({ advanced: [{ exposureCompensation: exposureValue }] as any });
+          setExposure(exposureValue);
+      } catch (e) {
+          console.error("Exposure failed", e);
+      }
+  }, [supportsExposure]);
+
+  const cycleCamera = useCallback(() => {
+      if (availableCameras.length <= 1) return;
+      
+      const nextIndex = (currentCameraIndex + 1) % availableCameras.length;
+      setCurrentCameraIndex(nextIndex);
+      
+      const nextDeviceId = availableCameras[nextIndex].deviceId;
+      startCamera(nextDeviceId);
+  }, [availableCameras, currentCameraIndex, startCamera]);
+
+  const captureImage = useCallback(async (onCapture: (imageSrc: string) => void, shouldClose: boolean = true) => {
+    if (isCapturing) return;
+    
+    const now = Date.now();
+    if (!shouldClose && now - lastCaptureTime.current < 500) return;
+
+    if (videoRef.current && streamRef.current) {
+      setIsCapturing(true);
+      lastCaptureTime.current = now;
+      if (navigator.vibrate) navigator.vibrate(20);
+
+      try {
+        const track = streamRef.current.getVideoTracks()[0];
+        let imageBlob: Blob | null = null;
+
+        if ('ImageCapture' in window) {
+            try {
+                const imageCapture = new (window as any).ImageCapture(track);
+                imageBlob = await imageCapture.takePhoto();
+            } catch (err) {
+                console.warn("ImageCapture API failed, falling back to Canvas", err);
+            }
+        }
+
+        if (!imageBlob) {
+            const video = videoRef.current;
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            if (context) {
+                context.filter = 'none';
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const base64 = canvas.toDataURL('image/jpeg', 0.95);
+                onCapture(base64);
+            }
+        } else {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                onCapture(reader.result as string);
+            };
+            reader.readAsDataURL(imageBlob);
+        }
+
+        if (navigator.vibrate) navigator.vibrate(40);
+        if (!shouldClose) {
+            setTimeout(() => { if (mountedRef.current) setIsCapturing(false); }, 500);
+        }
+
+      } catch (e) {
+        console.error("Capture failed completely", e);
+        setIsCapturing(false);
+      }
+    }
+  }, [isCapturing]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    discoverCameras(); 
+    startCamera();
+    return () => {
+      mountedRef.current = false;
+      cleanupCamera();
+    };
+  }, [startCamera, cleanupCamera]);
+
+  return {
+    videoRef,
+    error,
+    isCapturing,
+    captureImage,
+    openNativeCamera,
+    hasTorch,
+    isTorchOn,
+    toggleTorch,
+    zoom,
+    minZoom,
+    maxZoom,
+    supportsZoom,
+    setZoomLevel,
+    exposure,
+    minExposure,
+    maxExposure,
+    supportsExposure,
+    setExposureLevel,
+    availableCameras,
+    cycleCamera
+  };
+};
