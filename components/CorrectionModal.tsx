@@ -11,7 +11,7 @@ const getBaseUrl = () => {
   if (Capacitor.isNativePlatform()) return VERCEL_PROJECT_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined') {
      const host = window.location.hostname;
-     if (host === 'localhost' || host.startsWith('192.168') || host.startsWith('10.')) {
+     if (host === 'localhost' || host.startsWith('192.168') || host.startsWith('10.') || host.includes('run.app')) {
         return VERCEL_PROJECT_URL.replace(/\/$/, '');
      }
   }

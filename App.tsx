@@ -610,8 +610,6 @@ export default function App() {
         queueCount={queue.length}
         setShowQueueModal={setShowQueueModal}
         setShowENumbersModal={setShowENumbersModal}
-        productType={productType}
-        setProductType={setProductType}
         triggerSubscription={triggerSubscription}
         hasCustomKey={hasCustomKey}
         isPremium={!!isPremium}
