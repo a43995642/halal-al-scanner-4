@@ -55,4 +55,3 @@ jobs:
             sha1_fingerprint.txt
             debug.keystore
           retention-days: 5
-
