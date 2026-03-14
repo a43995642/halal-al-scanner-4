@@ -2,10 +2,6 @@
 import { TranslationDictionary } from '../types';
 
 const en: TranslationDictionary = {
-  food: "Food",
-  cosmetics: "Cosmetics",
-  clothes: "Clothes",
-  productDetectedAs: "Product detected as",
   appTitle: "Halal Scanner",
   appSubtitle: "Halal Scanner AI",
   errorTitle: "Sorry, an error occurred",

@@ -58,7 +58,7 @@ export default async function handler(request, response) {
     }
     // -------------------------
 
-    const { images, text, dietaryPreferences: bodyDietaryPrefs, isPremium: bodyIsPremium, productType = 'food' } = request.body;
+    const { images, text, dietaryPreferences: bodyDietaryPrefs, isPremium: bodyIsPremium } = request.body;
     const userId = request.headers['x-user-id'];
     const language = request.headers['x-language'] || 'ar'; // Default to Arabic
     const ingredientMode = request.headers['x-ingredient-language'] || 'app'; // 'app' (translated) or 'original'
@@ -166,24 +166,6 @@ If ANY ingredient violates these preferences (e.g., contains dairy for Dairy All
    - IMPORTANT: Marine animals and fish like Anchovy are HALAL and do NOT require slaughtering. Never classify them as HARAM or DOUBTFUL based on slaughtering.
    - IMPORTANT: Do NOT classify any product as HARAM unless there is a clear, explicit HARAM ingredient.`;
 
-    if (productType === 'cosmetics') {
-        productContext = "cosmetics and personal care auditor";
-        notProductMessage = "This does not look like a cosmetics product or ingredients list. Please take a picture of the ingredients.";
-        rules = `
-   - HALAL: Plant-based oils, synthetic chemicals, water, minerals.
-   - DOUBTFUL: Unspecified Glycerin, Stearic Acid, Cetyl Alcohol (if animal derived), Collagen, Keratin, Tallow, Allantoin.
-   - HARAM: Carmine/E120 (in lipsticks/blush), Pig fat/Lard, Placenta (if porcine). Note: Cosmetic alcohol (Alcohol Denat, Cetearyl Alcohol) is generally HALAL as it is not intoxicating.
-   - IMPORTANT: Do NOT classify any product as HARAM unless there is a clear, explicit HARAM ingredient.`;
-    } else if (productType === 'clothes') {
-        productContext = "clothing and textiles auditor";
-        notProductMessage = "This does not look like a clothing label or material list. Please take a picture of the label.";
-        rules = `
-   - HALAL: Cotton, Polyester, Nylon, Wool, Silk (Note: Silk is halal as a material, though forbidden for men to wear), Synthetic Leather.
-   - DOUBTFUL: Genuine Leather (if source animal and slaughter method is unknown).
-   - HARAM: Pig leather (Porcine leather), Pig skin.
-   - IMPORTANT: Do NOT classify any product as HARAM unless there is a clear, explicit HARAM material (like pig leather).`;
-    }
-
     const systemInstruction = `
 You are an expert Islamic ${productContext} (OCR & Analysis).
 
@@ -196,7 +178,7 @@ Before analyzing ingredients/materials, check the image quality. If any of the f
    -> Status: "DOUBTFUL", Reason: Translate this to ${langName}: "Lighting is poor or there is glare on the text. For accurate results, please follow these tips:\n• Hold the camera steady.\n• Ensure good lighting without glare.\n• Focus clearly on the text.\n• Keep the text within the frame."
 3. **Cut-off Text**: If the text is cut off or incomplete.
    -> Status: "DOUBTFUL", Reason: Translate this to ${langName}: "The text seems cut off. For accurate results, please follow these tips:\n• Hold the camera steady.\n• Ensure good lighting without glare.\n• Focus clearly on the text.\n• Keep the text within the frame."
-4. **Not ${productType}**: If the image is a person, car, scenery, or a random object with no context.
+4. **Not Food**: If the image is a person, car, scenery, cosmetics, clothing, or a random object with no context.
    -> Status: "NON_FOOD", Reason: Translate this to ${langName}: "${notProductMessage}"
 5. **No Text Found**: If the image is clear but contains no readable text.
    -> Status: "DOUBTFUL", Reason: Translate this to ${langName}: "No readable text found. For accurate results, please follow these tips:\n• Hold the camera steady.\n• Ensure good lighting without glare.\n• Focus clearly on the text.\n• Keep the text within the frame."

@@ -77,42 +77,6 @@ const fetchWithTimeout = async (resource: RequestInfo, options: RequestInit & { 
   }
 };
 
-export const detectProductType = async (
-  base64Image: string,
-  signal?: AbortSignal
-): Promise<string | null> => {
-  try {
-    const apiUrl = `${getBaseUrl()}/api/detect-type`;
-    
-    // Resize image for faster detection
-    const resizedImage = await resizeImageWorker(base64Image, 512, 0.6);
-    
-    const response = await fetchWithTimeout(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ image: resizedImage }),
-      signal: signal,
-      timeout: 10000 // 10 seconds timeout
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    if (data && data.type && ['food', 'cosmetics', 'clothes'].includes(data.type)) {
-      return data.type;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error("Product Type Detection Error:", error);
-    return null;
-  }
-};
-
 export const analyzeImage = async (
   base64Images: string[], 
   userId?: string,
@@ -120,8 +84,7 @@ export const analyzeImage = async (
   enableImageDownscaling: boolean = true,
   language: Language = 'ar',
   signal?: AbortSignal,
-  dietaryPreferences: string[] = [],
-  productType: string = 'food'
+  dietaryPreferences: string[] = []
 ): Promise<ScanResult> => {
   
   const MAX_RETRIES = 3;
@@ -202,8 +165,7 @@ export const analyzeImage = async (
             body: JSON.stringify({
                 images: processedImages,
                 dietaryPreferences: dietaryPreferences,
-                isPremium: secureStorage.getItem('isPremium', false),
-                productType: productType
+                isPremium: secureStorage.getItem('isPremium', false)
             }),
             signal: signal,
             timeout: attempt === 0 ? 45000 : 55000 // Increase timeout slightly on retries (up to 55s)
@@ -354,8 +316,7 @@ export const analyzeText = async (
   userId?: string,
   language: Language = 'ar',
   signal?: AbortSignal,
-  dietaryPreferences: string[] = [],
-  productType: string = 'food'
+  dietaryPreferences: string[] = []
 ): Promise<ScanResult> => {
   // Check if offline
   if (!navigator.onLine) {
@@ -430,8 +391,7 @@ export const analyzeText = async (
           body: JSON.stringify({ 
               text: text,
               dietaryPreferences: dietaryPreferences,
-              isPremium: secureStorage.getItem('isPremium', false),
-              productType: productType
+              isPremium: secureStorage.getItem('isPremium', false)
           }),
           signal,
           timeout: attempt === 0 ? 40000 : 50000

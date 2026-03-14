@@ -14,7 +14,7 @@ const HistoryModal = React.lazy(() => import('./components/HistoryModal').then(m
 const TextInputModal = React.lazy(() => import('./components/TextInputModal').then(m => ({ default: m.TextInputModal })));
 const ENumbersDictionaryModal = React.lazy(() => import('./components/ENumbersDictionaryModal').then(m => ({ default: m.ENumbersDictionaryModal })));
 
-import { analyzeImage, analyzeText, detectProductType } from './services/geminiService';
+import { analyzeImage, analyzeText } from './services/geminiService';
 import { fetchProductByBarcode } from './services/openFoodFacts';
 import { ScanResult, ScanHistoryItem, HalalStatus } from './types';
 import { secureStorage } from './utils/secureStorage';
@@ -44,11 +44,8 @@ import { OfflineQueueModal } from './components/OfflineQueueModal';
 const LIFETIME_SCANS_LIMIT = 3; 
 const MAX_IMAGES_PER_SCAN = 4; 
 
-export type ProductType = 'food' | 'cosmetics' | 'clothes';
-
 export default function App() {
   const [images, setImages] = useState<string[]>([]);
-  const [productType, setProductType] = useState<ProductType>('food');
   const [showTextModal, setShowTextModal] = useState(false); 
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -195,23 +192,6 @@ export default function App() {
   
   const showToast = (msg: string) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); };
 
-  useEffect(() => {
-    if (images.length === 1 && !result && !isLoading) {
-      const detect = async () => {
-        try {
-          const detectedType = await detectProductType(images[0]);
-          if (detectedType && ['food', 'cosmetics', 'clothes'].includes(detectedType)) {
-            setProductType(detectedType as ProductType);
-            const typeName = detectedType === 'food' ? (t.food || 'Food') : detectedType === 'cosmetics' ? (t.cosmetics || 'Cosmetics') : (t.clothes || 'Clothes');
-            showToast(`${t.productDetectedAs || 'Product detected as'} ${typeName}`);
-          }
-        } catch (e) {
-          console.error("Auto-detect failed:", e);
-        }
-      };
-      detect();
-    }
-  }, [images, result, isLoading, t]);
   const saveToHistory = (scanResult: ScanResult, thumbnail?: string) => { const newItem: ScanHistoryItem = { id: Date.now().toString(), date: Date.now(), result: scanResult, thumbnail }; const updatedHistory = [newItem, ...history].slice(0, 30); setHistory(updatedHistory); localStorage.setItem('halalScannerHistory', JSON.stringify(updatedHistory)); };
   
   // --- HANDLE SUBSCRIPTION TRIGGER ---
@@ -292,7 +272,7 @@ export default function App() {
           if (storedPrefs) dietaryPreferences = JSON.parse(storedPrefs);
       } catch(e) { /* ignore */ }
 
-      const scanResult = await analyzeImage(aiReadyImages, userId || undefined, true, true, language, controller.signal, dietaryPreferences, productType);
+      const scanResult = await analyzeImage(aiReadyImages, userId || undefined, true, true, language, controller.signal, dietaryPreferences);
       
       clearInterval(progressInterval.current as any); setProgress(100);
       
@@ -455,7 +435,7 @@ export default function App() {
     } catch(e) { /* ignore */ }
 
     try { 
-        const scanResult = await analyzeText(text, userId || undefined, language, controller.signal, dietaryPreferences, productType); 
+        const scanResult = await analyzeText(text, userId || undefined, language, controller.signal, dietaryPreferences); 
         
         // Audio Feedback
         if (scanResult.status === HalalStatus.HALAL) playSuccessSound();
@@ -598,8 +578,6 @@ export default function App() {
       {/* --- LAYER 2: FLOATING HEADER --- */}
       <FloatingHeader 
         isFocusMode={isFocusMode}
-        productType={productType}
-        setProductType={setProductType}
         result={result}
         isLoading={isLoading}
         setShowSettings={setShowSettings}

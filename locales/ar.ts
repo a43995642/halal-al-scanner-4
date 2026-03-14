@@ -2,10 +2,6 @@
 import { TranslationDictionary } from '../types';
 
 const ar: TranslationDictionary = {
-  food: "طعام",
-  cosmetics: "مستحضرات تجميل",
-  clothes: "ملابس",
-  productDetectedAs: "تم التعرف على المنتج كـ",
   appTitle: "فاحص الحلال",
   appSubtitle: "Halal Scanner AI",
   errorTitle: "عذراً، حدث خطأ",

@@ -36,10 +36,6 @@ export type Language = 'ar' | 'en' | 'fr' | 'id' | 'tr' | 'de' | 'ru' | 'ur' | '
 
 export interface TranslationDictionary {
   contains?: string;
-  food?: string;
-  cosmetics?: string;
-  clothes?: string;
-  productDetectedAs?: string;
   appTitle: string;
   appSubtitle: string;
   errorTitle: string;
