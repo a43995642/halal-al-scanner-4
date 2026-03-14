@@ -1,3 +1,5 @@
+import { HalalStatus } from './types';
+
 export const OFFLINE_DB = [
   {
     id: "E120",

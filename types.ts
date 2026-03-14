@@ -258,6 +258,7 @@ export interface TranslationDictionary {
   cameraLiveError?: string;
   cameraBrowserError?: string;
   cameraAccessError?: string;
+  cameraNotFoundError?: string;
   offlineQueue?: string;
   offlineQueueTitle?: string;
   offlineWarning?: string;

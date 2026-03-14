@@ -3,6 +3,7 @@ import { HalalStatus, ScanResult, Language } from "../types";
 import { Capacitor } from '@capacitor/core';
 import { checkLocalHaram, checkLocalDatabase } from "./haramKeywords";
 import { secureStorage } from "../utils/secureStorage";
+import { resizeImageWorker } from "../utils/imageUtils";
 
 // ⚠️ الرابط المباشر للخادم (للأندرويد)
 const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4.vercel.app'; 
@@ -84,7 +85,7 @@ export const detectProductType = async (
     const apiUrl = `${getBaseUrl()}/api/detect-type`;
     
     // Resize image for faster detection
-    const resizedImage = await resizeImage(base64Image, 512, 512, 0.6);
+    const resizedImage = await resizeImageWorker(base64Image, 512, 0.6);
     
     const response = await fetchWithTimeout(apiUrl, {
       method: "POST",

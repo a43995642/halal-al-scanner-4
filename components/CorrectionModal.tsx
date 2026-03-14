@@ -2,21 +2,8 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { HalalStatus, ScanResult } from '../types';
-import { Capacitor } from '@capacitor/core';
 import { useAlert } from '../contexts/AlertContext';
-
-// Reusing URL logic from geminiService to ensure consistency
-const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4.vercel.app'; 
-const getBaseUrl = () => {
-  if (Capacitor.isNativePlatform()) return VERCEL_PROJECT_URL.replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-     const host = window.location.hostname;
-     if (host === 'localhost' || host.startsWith('192.168') || host.startsWith('10.') || host.includes('run.app')) {
-        return VERCEL_PROJECT_URL.replace(/\/$/, '');
-     }
-  }
-  return '';
-};
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface CorrectionModalProps {
   onClose: () => void;
@@ -38,29 +25,38 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
     setIsSending(true);
     
     try {
-        const baseUrl = getBaseUrl();
-        const response = await fetch(`${baseUrl}/api/report`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                userId,
-                originalText: analyzedText || result.reason, // Fallback to reason if raw text missing
-                aiResult: result,
-                userCorrection: selectedStatus,
-                userNotes: notes
-            })
-        });
-        
-        if (response.ok) {
-            showAlert(t.sendReport, t.reportSent, 'success');
-            onClose();
-        } else {
-            throw new Error('Failed to send');
+        if (!isSupabaseConfigured) {
+            showAlert(t.errorTitle, language === 'ar' ? 'لم يتم إعداد قاعدة البيانات (Supabase) لحفظ التقارير.' : 'Supabase database is not configured to save reports.', 'error');
+            setIsSending(false);
+            return;
         }
-    } catch (e) {
-        showAlert(t.errorTitle, t.connectionError, 'error');
+
+        const { error } = await supabase
+            .from('reports')
+            .insert([
+                {
+                    user_id: userId === 'anonymous' ? null : userId,
+                    original_text: analyzedText || result.reason,
+                    ai_result: result,
+                    user_correction: selectedStatus,
+                    user_notes: notes
+                }
+            ]);
+
+        if (error) {
+            console.error("Supabase Insert Error:", error);
+            throw error;
+        }
+        
+        showAlert(t.sendReport, t.reportSent, 'success');
+        onClose();
+    } catch (e: any) {
+        console.error("Report submission error:", e);
+        let errorMsg = e.message || (language === 'ar' ? 'حدث خطأ أثناء إرسال التقرير.' : 'An error occurred while sending the report.');
+        if (errorMsg.includes('Failed to fetch')) {
+            errorMsg = language === 'ar' ? 'تعذر الاتصال بالخادم. تحقق من الإنترنت أو إعدادات قاعدة البيانات.' : 'Connection failed. Check internet or DB config.';
+        }
+        showAlert(t.errorTitle, errorMsg, 'error');
     } finally {
         setIsSending(false);
     }
