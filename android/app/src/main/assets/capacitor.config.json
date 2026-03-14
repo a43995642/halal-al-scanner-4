@@ -1,0 +1,35 @@
+{
+	"appId": "io.halalscanner.ai",
+	"appName": "Halal Scanner",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": true,
+		"allowNavigation": [
+			"*.vercel.app",
+			"*.supabase.co",
+			"accounts.google.com",
+			"world.openfoodfacts.org"
+		]
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 1500,
+			"launchAutoHide": true,
+			"backgroundColor": "#000000",
+			"androidSplashResourceName": "splash",
+			"androidScaleType": "CENTER_CROP",
+			"showSpinner": false,
+			"splashFullScreen": true,
+			"splashImmersive": true
+		},
+		"GoogleAuth": {
+			"scopes": [
+				"profile",
+				"email"
+			],
+			"serverClientId": "565514314234-9ae9k1bf0hhubkacivkuvpu01duqfthv.apps.googleusercontent.com",
+			"forceCodeForRefreshToken": true
+		}
+	}
+}
