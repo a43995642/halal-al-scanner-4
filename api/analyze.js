@@ -310,6 +310,62 @@ Output: JSON ONLY. No Markdown.
         // Double cleanup just in case Gemini sends markdown despite instructions
         const cleanText = modelResponse.text.replace(/```json/g, '').replace(/```/g, '').trim();
         result = JSON.parse(cleanText);
+
+        // --- AI HALLUCINATION OVERRIDE (LOCAL DATABASE) ---
+        if (result && result.ingredientsDetected && Array.isArray(result.ingredientsDetected)) {
+            let hasHaram = false;
+            let hasDoubtful = false;
+
+            // Local Database of E-Numbers and Ingredients (Expanded & Comprehensive)
+            const haramRegex = /\b(e120|carmine|cochineal|carminic acid|pork|lard|bacon|ham|porcine|swine|ethanol|wine|beer|rum|liquor|liqueur|brandy|cognac|tequila|vodka|whiskey|gin|champagne|sake|mirin|e904|shellac|confectioner's glaze|pork fat|pork gelatin)\b/i;
+            
+            const doubtfulRegex = /\b(e153|e160a|e252|e270|e322|e325|e326|e327|e422|e430|e431|e432|e433|e434|e435|e436|e441|e442|e470|e470a|e470b|e471|e472[a-f]?|e473|e474|e475|e476|e477|e478|e479b?|e481|e482|e483|e491|e492|e493|e494|e495|e542|e570|e572|e627|e631|e635|e640|e920|e921|e1518|mono- and diglycerides|polyglycerol polyricinoleate|sodium stearoyl-2-lactylate|calcium stearoyl-2-lactylate|bone phosphate|stearic acid|magnesium stearate|disodium inosinate|disodium ribonucleotides|glycine|glyceryl triacetate|triacetin|rennet|whey|pepsin|lipase|enzymes|glycerin|glycerol|flavoring|natural flavor|artificial flavor|gelatin|gelatine|shortening|tallow|suet|animal fat|animal shortening|polysorbate|vanilla extract|l-cysteine|l-cistein|l-cystine)\b/i;
+
+            const checkIngredient = (ing) => {
+                if (!ing || !ing.name) return;
+                
+                if (haramRegex.test(ing.name)) {
+                    ing.status = "HARAM";
+                    hasHaram = true;
+                } else if (doubtfulRegex.test(ing.name) && ing.status !== "HARAM") {
+                    ing.status = "DOUBTFUL";
+                    hasDoubtful = true;
+                }
+                
+                if (ing.subIngredients && Array.isArray(ing.subIngredients)) {
+                    ing.subIngredients.forEach(subIng => checkIngredient(subIng));
+                }
+            };
+
+            result.ingredientsDetected.forEach(ing => checkIngredient(ing));
+
+            const overrideMessages = {
+                HARAM: {
+                    ar: "يحتوي على مكونات محرمة قاطعة (مثل E120 أو مشتقات الخنزير) تم اكتشافها بواسطة قاعدة البيانات المحلية.",
+                    fr: "Contient des ingrédients haram stricts détectés par la base de données locale.",
+                    id: "Mengandung bahan haram yang terdeteksi oleh database lokal.",
+                    tr: "Yerel veritabanı tarafından tespit edilen kesin haram bileşenler içeriyor.",
+                    en: "Contains strict haram ingredients detected by the local database."
+                },
+                DOUBTFUL: {
+                    ar: "يحتوي على مكونات مشتبه بها تحتاج إلى التحقق من مصدرها.",
+                    fr: "Contient des ingrédients douteux nécessitant une vérification de la source.",
+                    id: "Mengandung bahan syubhat yang memerlukan verifikasi sumber.",
+                    tr: "Kaynağının doğrulanması gereken şüpheli bileşenler içeriyor.",
+                    en: "Contains doubtful ingredients requiring source verification."
+                }
+            };
+
+            if (hasHaram && result.status !== "HARAM") {
+                result.status = "HARAM";
+                result.reason = overrideMessages.HARAM[language] || overrideMessages.HARAM['en'];
+            } else if (hasDoubtful && result.status === "HALAL") {
+                result.status = "DOUBTFUL";
+                result.reason = overrideMessages.DOUBTFUL[language] || overrideMessages.DOUBTFUL['en'];
+            }
+        }
+        // --------------------------------------------------
+
     } catch (e) {
         console.warn("Failed to parse AI response:", modelResponse.text);
         // Fallback result instead of 500 error
