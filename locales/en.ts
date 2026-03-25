@@ -22,7 +22,7 @@ const en: TranslationDictionary = {
   statusUnknown: "Unknown",
   statusHalalSub: "After analyzing the ingredients list provided on the packaging, no known forbidden ingredients were detected.",
   statusHaramSub: "Ingredients known to be forbidden or derived from forbidden sources were detected.",
-  statusDoubtfulSub: "Ingredients were found that could be derived from plant or animal sources, but the manufacturer did not clearly specify their origin on the packaging. Therefore, their source cannot be accurately confirmed.",
+  statusDoubtfulSub: "Ingredients were found, but their source is not clearly stated on the packaging, so it cannot be confirmed.",
   statusNonFoodSub: "Barcode / Item / Unclear",
   statusUnknownSub: "Please scan a food product",
   historyTitle: "Scan History",
