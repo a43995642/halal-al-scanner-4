@@ -504,7 +504,7 @@ function analyzeIngredients(ingredients, language) {
 
     // القوائم المبدئية (Initial Lists)
     const haramList = ['alcohol', 'ethanol', 'pork', 'gelatin'];
-    const unknownList = ['natural flavor', 'flavoring', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
+    const unknownList = ['flavor', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
     const safeList = ['water', 'sugar', 'salt', 'corn starch', 'vanilla powder'];
 
     const checkIng = (ing) => {
