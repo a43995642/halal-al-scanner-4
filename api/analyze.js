@@ -367,6 +367,23 @@ Output: JSON ONLY. No Markdown.
         }
         // --------------------------------------------------
 
+        // --- NEW SMART CLASSIFICATION SYSTEM INTEGRATION ---
+        if (result && result.ingredientsDetected && Array.isArray(result.ingredientsDetected)) {
+            const smartResult = analyzeIngredients(result.ingredientsDetected, language);
+            
+            const severity = { "HALAL": 0, "DOUBTFUL": 1, "HARAM": 2 };
+            
+            // "أسوأ مكون يحدد النتيجة النهائية"
+            // Update the final status if the smart system found a worse ingredient
+            if (severity[smartResult.status] >= severity[result.status]) {
+                result.status = smartResult.status;
+                result.reason = smartResult.reason;
+            } else if (result.status === "HALAL" && smartResult.status === "HALAL") {
+                result.reason = smartResult.reason;
+            }
+        }
+        // ---------------------------------------------------
+
     } catch (e) {
         console.warn("Failed to parse AI response:", modelResponse.text);
         // Fallback result instead of 500 error
@@ -479,4 +496,119 @@ Output: JSON ONLY. No Markdown.
     });
   }
 }
+
+// --- SMART INGREDIENT CLASSIFICATION SYSTEM ---
+function analyzeIngredients(ingredients, language) {
+    let hasHaram = false;
+    let hasUnknown = false;
+
+    // القوائم المبدئية (Initial Lists)
+    const haramList = ['alcohol', 'ethanol', 'pork', 'gelatin'];
+    const unknownList = ['natural flavor', 'flavoring', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
+    const safeList = ['water', 'sugar', 'salt', 'corn starch', 'vanilla powder'];
+
+    const checkIng = (ing) => {
+        if (!ing || !ing.name) return;
+        const nameLower = ing.name.toLowerCase();
+        
+        // 1. Check Haram
+        let isHaram = false;
+        for (const h of haramList) {
+            if (nameLower.includes(h)) {
+                // Exception: gelatin (إذا لم يذكر حلال)
+                if (h === 'gelatin' && nameLower.includes('halal')) {
+                    continue; // Skip if it explicitly says halal gelatin
+                }
+                isHaram = true;
+                break;
+            }
+        }
+
+        // 2. Check Unknown
+        let isUnknown = false;
+        if (!isHaram) {
+            for (const u of unknownList) {
+                if (nameLower.includes(u)) {
+                    isUnknown = true;
+                    break;
+                }
+            }
+        }
+
+        // 3. Check Safe
+        let isSafe = false;
+        if (!isHaram && !isUnknown) {
+            for (const s of safeList) {
+                if (nameLower.includes(s)) {
+                    isSafe = true;
+                    break;
+                }
+            }
+        }
+
+        // Update ingredient status based on lists
+        if (isHaram) {
+            ing.status = "HARAM";
+            hasHaram = true;
+        } else if (isUnknown) {
+            if (ing.status !== "HARAM") {
+                ing.status = "DOUBTFUL";
+                hasUnknown = true;
+            }
+        } else if (isSafe) {
+            if (ing.status !== "HARAM" && ing.status !== "DOUBTFUL") {
+                ing.status = "HALAL";
+            }
+        } else {
+            // If not in any list, respect existing status from AI/Regex
+            if (ing.status === "HARAM") hasHaram = true;
+            if (ing.status === "DOUBTFUL") hasUnknown = true;
+        }
+
+        // Recursively check sub-ingredients
+        if (ing.subIngredients && Array.isArray(ing.subIngredients)) {
+            ing.subIngredients.forEach(sub => checkIng(sub));
+        }
+    };
+
+    if (ingredients && Array.isArray(ingredients)) {
+        ingredients.forEach(ing => checkIng(ing));
+    }
+
+    // Determine final result based on the worst ingredient
+    let finalStatus = "HALAL";
+    if (hasHaram) finalStatus = "HARAM";
+    else if (hasUnknown) finalStatus = "DOUBTFUL";
+
+    // النصوص الجاهزة للعرض (Display Texts)
+    const texts = {
+        HARAM: {
+            ar: "يحتوي المنتج على مكونات محرمة بشكل واضح.",
+            en: "The product contains clearly prohibited ingredients.",
+            fr: "Le produit contient des ingrédients clairement interdits.",
+            id: "Produk mengandung bahan yang jelas diharamkan.",
+            tr: "Ürün açıkça yasaklanmış bileşenler içeriyor."
+        },
+        DOUBTFUL: {
+            ar: "يحتوي المنتج على مكونات غير واضحة المصدر، لذلك لا يمكن التأكد من حالته.",
+            en: "The product contains ingredients of unclear origin, so its status cannot be confirmed.",
+            fr: "Le produit contient des ingrédients d'origine incertaine, son statut ne peut donc pas être confirmé.",
+            id: "Produk mengandung bahan dengan asal yang tidak jelas, sehingga statusnya tidak dapat dipastikan.",
+            tr: "Ürün kaynağı belirsiz bileşenler içeriyor, bu nedenle durumu doğrulanamıyor."
+        },
+        HALAL: {
+            ar: "جميع المكونات واضحة ولا يوجد ما يدل على وجود مواد محرمة.",
+            en: "All ingredients are clear and there is no indication of prohibited substances.",
+            fr: "Tous les ingrédients sont clairs et il n'y a aucune indication de substances interdites.",
+            id: "Semua bahan jelas dan tidak ada indikasi zat yang dilarang.",
+            tr: "Tüm bileşenler açıktır ve yasaklanmış madde belirtisi yoktur."
+        }
+    };
+
+    return {
+        status: finalStatus,
+        reason: texts[finalStatus][language] || texts[finalStatus]['en']
+    };
+}
+// ----------------------------------------------
     
