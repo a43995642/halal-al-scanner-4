@@ -226,7 +226,7 @@ export const Camera: React.FC<CameraProps> = ({ onCapture, onClose }) => {
                              <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
                           </svg>
                        </div>
-                       <span>{language === 'ar' ? 'استخدم شريط الإضاءة (يسار) لتحسين الرؤية' : 'Use left slider to adjust brightness'}</span>
+                       <span>{t.brightnessHint || 'Use left slider to adjust brightness'}</span>
                     </li>
                     )}
                     {supportsZoom && maxZoom > 1 && (
@@ -234,7 +234,7 @@ export const Camera: React.FC<CameraProps> = ({ onCapture, onClose }) => {
                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 text-white">
                           <span className="text-[10px] font-bold">1x</span>
                        </div>
-                       <span>{language === 'ar' ? 'استخدم شريط التكبير (يمين) للتقريب' : 'Use right slider to zoom in/out'}</span>
+                       <span>{t.zoomHint || 'Use right slider to zoom in/out'}</span>
                     </li>
                     )}
                     {hasTorch && (
@@ -252,7 +252,7 @@ export const Camera: React.FC<CameraProps> = ({ onCapture, onClose }) => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                           </svg>
                        </div>
-                       <span>{language === 'ar' ? 'تبديل الكاميرا (إذا توفرت)' : 'Switch camera lens'}</span>
+                       <span>{t.switchCameraHint || 'Switch camera lens'}</span>
                     </li>
                     )}
                  </ul>

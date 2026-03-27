@@ -52,8 +52,8 @@ export default async function handler(request, response) {
     if (!appVersion || appVersion < MIN_APP_VERSION) {
         return response.status(426).json({ 
             error: 'UPDATE_REQUIRED', 
-            message: 'هذه النسخة من التطبيق قديمة وتوقفت عن العمل. يرجى تحديث التطبيق أو التواصل مع المطور.',
-            reason: 'Deprecated API Version'
+            message: 'updateRequired',
+            reason: 'updateRequired'
         });
     }
     // -------------------------
@@ -341,28 +341,16 @@ Output: JSON ONLY. No Markdown.
             result.ingredientsDetected.forEach(ing => checkIngredient(ing));
 
             const overrideMessages = {
-                HARAM: {
-                    ar: "يحتوي على مكونات محرمة قاطعة (مثل E120 أو مشتقات الخنزير) تم اكتشافها بواسطة قاعدة البيانات المحلية.",
-                    fr: "Contient des ingrédients haram stricts détectés par la base de données locale.",
-                    id: "Mengandung bahan haram yang terdeteksi oleh database lokal.",
-                    tr: "Yerel veritabanı tarafından tespit edilen kesin haram bileşenler içeriyor.",
-                    en: "Contains strict haram ingredients detected by the local database."
-                },
-                DOUBTFUL: {
-                    ar: "يحتوي على مكونات مشتبه بها تحتاج إلى التحقق من مصدرها.",
-                    fr: "Contient des ingrédients douteux nécessitant une vérification de la source.",
-                    id: "Mengandung bahan syubhat yang memerlukan verifikasi sumber.",
-                    tr: "Kaynağının doğrulanması gereken şüpheli bileşenler içeriyor.",
-                    en: "Contains doubtful ingredients requiring source verification."
-                }
+                HARAM: "overrideHaram",
+                DOUBTFUL: "overrideDoubtful"
             };
 
             if (hasHaram && result.status !== "HARAM") {
                 result.status = "HARAM";
-                result.reason = overrideMessages.HARAM[language] || overrideMessages.HARAM['en'];
+                result.reason = overrideMessages.HARAM;
             } else if (hasDoubtful && result.status === "HALAL") {
                 result.status = "DOUBTFUL";
-                result.reason = overrideMessages.DOUBTFUL[language] || overrideMessages.DOUBTFUL['en'];
+                result.reason = overrideMessages.DOUBTFUL;
             }
         }
         // --------------------------------------------------
@@ -374,49 +362,111 @@ Output: JSON ONLY. No Markdown.
             const severity = { "HALAL": 0, "DOUBTFUL": 1, "HARAM": 2 };
             
             // "أسوأ مكون يحدد النتيجة النهائية"
-            // Update the final status if the smart system found a worse ingredient
             if (severity[smartResult.status] >= severity[result.status]) {
                 result.status = smartResult.status;
                 result.reason = smartResult.reason;
             } else if (result.status === "HALAL" && smartResult.status === "HALAL") {
                 result.reason = smartResult.reason;
             }
+
+            // --- AUTO-LEARNING CACHE SYSTEM (SUPABASE) ---
+            if (supabase) {
+                try {
+                    // 1. Collect unique ingredient names (limit length to avoid caching full sentences)
+                    const namesToCache = new Set();
+                    const extractNames = (ing) => {
+                        if (ing.name && ing.name.length < 50) {
+                            namesToCache.add(ing.name.toLowerCase().trim());
+                        }
+                        if (ing.subIngredients) ing.subIngredients.forEach(extractNames);
+                    };
+                    result.ingredientsDetected.forEach(extractNames);
+                    const namesArray = Array.from(namesToCache);
+
+                    if (namesArray.length > 0) {
+                        // 2. Fetch existing ingredients from DB
+                        const { data: cachedIngredients, error: fetchError } = await supabase
+                            .from('ingredient_cache')
+                            .select('name, status')
+                            .in('name', namesArray);
+
+                        const cacheMap = {};
+                        if (cachedIngredients && !fetchError) {
+                            cachedIngredients.forEach(row => {
+                                cacheMap[row.name] = row.status;
+                            });
+                        }
+
+                        const newToCache = [];
+
+                        // 3. Apply cache to current ingredients and collect new ones
+                        const applyCache = (ing) => {
+                            if (!ing.name) return;
+                            const nameLower = ing.name.toLowerCase().trim();
+                            
+                            if (cacheMap[nameLower]) {
+                                // If DB has a status, enforce it (especially if it's worse)
+                                const cachedStatus = cacheMap[nameLower];
+                                if (severity[cachedStatus] >= severity[ing.status]) {
+                                    ing.status = cachedStatus;
+                                }
+                            } else if (nameLower.length < 50) {
+                                // New ingredient: prepare to save it to DB
+                                newToCache.push({ name: nameLower, status: ing.status });
+                                cacheMap[nameLower] = ing.status; // Prevent duplicates in this run
+                            }
+
+                            if (ing.subIngredients) ing.subIngredients.forEach(applyCache);
+                        };
+
+                        result.ingredientsDetected.forEach(applyCache);
+
+                        // 4. Save new ingredients to DB (Upsert)
+                        if (newToCache.length > 0) {
+                            await supabase.from('ingredient_cache').upsert(newToCache, { onConflict: 'name' });
+                        }
+
+                        // 5. Re-evaluate final product status just in case the cache worsened an ingredient
+                        let finalStatus = "HALAL";
+                        let hasHaram = false;
+                        let hasDoubtful = false;
+                        
+                        const checkFinal = (ing) => {
+                            if (ing.status === "HARAM") hasHaram = true;
+                            if (ing.status === "DOUBTFUL") hasDoubtful = true;
+                            if (ing.subIngredients) ing.subIngredients.forEach(checkFinal);
+                        }
+                        result.ingredientsDetected.forEach(checkFinal);
+                        
+                        if (hasHaram) finalStatus = "HARAM";
+                        else if (hasDoubtful) finalStatus = "DOUBTFUL";
+                        
+                        if (severity[finalStatus] > severity[result.status]) {
+                            result.status = finalStatus;
+                            // Update reason text based on language
+                            const texts = {
+                                HARAM: "smartHaram",
+                                DOUBTFUL: "smartDoubtful"
+                            };
+                            result.reason = texts[finalStatus] || result.reason;
+                        }
+                    }
+                } catch (cacheErr) {
+                    console.error("Cache system error:", cacheErr);
+                    // Fail silently so the user still gets their result even if DB fails
+                }
+            }
+            // ---------------------------------------------
         }
         // ---------------------------------------------------
 
     } catch (e) {
         console.warn("Failed to parse AI response:", modelResponse.text);
         // Fallback result instead of 500 error
-        const fallbackMessages = {
-            ar: "حدث خطأ في قراءة الاستجابة. يرجى المحاولة مرة أخرى.",
-            fr: "Erreur lors de l'analyse de la réponse IA. Veuillez réessayer.",
-            id: "Kesalahan saat mengurai respons AI. Silakan coba lagi.",
-            tr: "Yapay zeka yanıtı ayrıştırılırken hata oluştu. Lütfen tekrar deneyin.",
-            de: "Fehler beim Parsen der KI-Antwort. Bitte versuchen Sie es erneut.",
-            ru: "Ошибка при разборе ответа ИИ. Попробуйте снова.",
-            ur: "AI جواب کو پارس کرنے میں خرابی۔ براہ کرم دوبارہ کوشش کریں۔",
-            ms: "Ralat menghuraikan respons AI. Sila cuba lagi.",
-            bn: "এআই প্রতিক্রিয়া পার্স করতে ত্রুটি। অনুগ্রহ করে আবার চেষ্টা করুন.",
-            zh: "解析 AI 响应时出错。请重试。",
-            fa: "خطا در تجزیه پاسخ هوش مصنوعی. لطفا دوباره تلاش کنید.",
-            es: "Error al analizar la respuesta de IA. Por favor intenta de nuevo.",
-            hi: "AI प्रतिक्रिया को पार्स करने में त्रुटि। कृपया पुनः प्रयास करें।",
-            uz: "AI javobini tahlil qilishda xatolik. Iltimos, qayta urinib ko'ring.",
-            kk: "AI жауабын талдау қатесі. Қайта көріңіз.",
-            ky: "AI жообун талдоо катасы. Сураныч, кайра аракет кылыңыз.",
-            so: "Khalad falanqaynta jawaabta AI. Fadlan isku day mar kale.",
-            ha: "Kuskure wajen fassarar amsar AI. Da fatan za a sake gwadawa.",
-            sw: "Hitilafu wakati wa kuchakata jibu la AI. Tafadhali jaribu tena.",
-            ps: "د AI ځواب په پروسس کولو کې تېروتنه. مهرباني وکړئ بیا هڅه وکړئ.",
-            tl: "Error sa pag-parse ng tugon ng AI. Pakisubukan muli.",
-            ku: "هەڵە لە شیکردنەوەی وەڵامی AI. تکایە دووبارە هەوڵبدەرەوە.",
-            ml: "AI പ്രതികരണം പാഴ്‌സ് ചെയ്യുന്നതിൽ പിശക്. ദയവായി വീണ്ടും ശ്രമിക്കുക.",
-            en: "Error parsing AI response. Please try again."
-        };
         
         result = { 
             status: "DOUBTFUL", 
-            reason: fallbackMessages[language] || fallbackMessages['en'],
+            reason: "fallbackError",
             ingredientsDetected: [], 
             confidence: 0 
         };
@@ -437,17 +487,10 @@ Output: JSON ONLY. No Markdown.
     console.error("Backend Error:", error);
 
     if (error.message?.toLowerCase().includes('safety') || error.message?.toLowerCase().includes('blocked') || error.message?.toLowerCase().includes('harm')) {
-         const safetyMessages = {
-             ar: "تم حظر المحتوى لأسباب تتعلق بالسلامة. يرجى التقاط صورة أخرى.",
-             fr: "Contenu bloqué pour des raisons de sécurité. Veuillez prendre une autre photo.",
-             id: "Konten diblokir karena alasan keamanan. Silakan ambil foto lain.",
-             tr: "İçerik güvenlik nedeniyle engellendi. Lütfen başka bir fotoğraf çekin.",
-             en: "Content blocked for safety reasons. Please take another picture."
-         };
          
          return response.status(200).json({
              status: "DOUBTFUL",
-             reason: safetyMessages[language] || safetyMessages['en'],
+             reason: "safetyBlocked",
              ingredientsDetected: [],
              confidence: 0
          });
@@ -455,36 +498,10 @@ Output: JSON ONLY. No Markdown.
 
     // Handle Quota/Rate Limit Errors (429)
     if (error.message?.includes('429') || error.status === 429 || error.code === 429 || error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('503') || error.status === 503 || error.code === 503 || error.message?.includes('500') || error.status === 500 || error.code === 500) {
-         const busyMessages = {
-            ar: "الخادم مشغول حالياً. يرجى المحاولة بعد قليل.",
-            fr: "Le serveur est occupé. Veuillez réessayer plus tard.",
-            id: "Server sedang sibuk. Silakan coba lagi nanti.",
-            tr: "Sunucu şu anda meşgul. Lütfen daha sonra tekrar deneyin.",
-            de: "Server ist beschäftigt. Bitte versuchen Sie es später erneut.",
-            ru: "Сервер перегружен. Попробуйте позже.",
-            ur: "سرور مصروف ہے۔ براہ کرم کچھ دیر بعد کوشش کریں۔",
-            ms: "Pelayan sedang sibuk. Sila cuba sebentar lagi.",
-            bn: "সার্ভার বর্তমানে ব্যস্ত। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
-            zh: "服务器繁忙。请稍后再试。",
-            fa: "سرور مشغول است. لطفا کمی بعد تلاش کنید.",
-            es: "El servidor está ocupado. Inténtalo más tarde.",
-            hi: "सर्वर व्यस्त है। कृपया थोड़ी देर बाद प्रयास करें।",
-            uz: "Server band. Iltimos, keyinroq urinib ko'ring.",
-            kk: "Сервер бос емес. Кейінірек қайталаңыз.",
-            ky: "Сервер бош эмес. Бираздан кийин аракет кылыңыз.",
-            so: "Server-ku wuu mashquulsan yahay. Fadlan isku day mar kale hadhow.",
-            ha: "Sabara tana aiki. Da fatan za a sake gwadawa anjima.",
-            sw: "Seva ina shughuli nyingi. Tafadhali jaribu tena baadaye.",
-            ps: "سرور بوخت دی. مهرباني وکړئ وروسته بیا هڅه وکړئ.",
-            tl: "Abala ang server. Pakisubukan muli mamaya.",
-            ku: "سێرڤەر سەرقاڵە. تکایە دواتر هەوڵبدەرەوە.",
-            ml: "സെർവർ തിരക്കിലാണ്. ദയവായി പിന്നീട് വീണ്ടും ശ്രമിക്കുക.",
-            en: "Server is busy. Please try again later."
-         };
          
          return response.status(200).json({
              status: "DOUBTFUL",
-             reason: busyMessages[language] || busyMessages['en'],
+             reason: "serverBusy",
              ingredientsDetected: [],
              confidence: 0
          });
@@ -582,32 +599,14 @@ function analyzeIngredients(ingredients, language) {
 
     // النصوص الجاهزة للعرض (Display Texts)
     const texts = {
-        HARAM: {
-            ar: "يحتوي المنتج على مكونات محرمة بشكل واضح.",
-            en: "The product contains clearly prohibited ingredients.",
-            fr: "Le produit contient des ingrédients clairement interdits.",
-            id: "Produk mengandung bahan yang jelas diharamkan.",
-            tr: "Ürün açıkça yasaklanmış bileşenler içeriyor."
-        },
-        DOUBTFUL: {
-            ar: "يحتوي المنتج على مكونات غير واضحة المصدر، لذلك لا يمكن التأكد من حالته.",
-            en: "The product contains ingredients of unclear origin, so its status cannot be confirmed.",
-            fr: "Le produit contient des ingrédients d'origine incertaine, son statut ne peut donc pas être confirmé.",
-            id: "Produk mengandung bahan dengan asal yang tidak jelas, sehingga statusnya tidak dapat dipastikan.",
-            tr: "Ürün kaynağı belirsiz bileşenler içeriyor, bu nedenle durumu doğrulanamıyor."
-        },
-        HALAL: {
-            ar: "جميع المكونات واضحة ولا يوجد ما يدل على وجود مواد محرمة.",
-            en: "All ingredients are clear and there is no indication of prohibited substances.",
-            fr: "Tous les ingrédients sont clairs et il n'y a aucune indication de substances interdites.",
-            id: "Semua bahan jelas dan tidak ada indikasi zat yang dilarang.",
-            tr: "Tüm bileşenler açıktır ve yasaklanmış madde belirtisi yoktur."
-        }
+        HARAM: "smartHaram",
+        DOUBTFUL: "smartDoubtful",
+        HALAL: "smartHalal"
     };
 
     return {
         status: finalStatus,
-        reason: texts[finalStatus][language] || texts[finalStatus]['en']
+        reason: texts[finalStatus]
     };
 }
 // ----------------------------------------------

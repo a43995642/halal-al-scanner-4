@@ -101,9 +101,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ history, onClose, on
              </div>
           ) : (
             <>
-              {renderGroup(language === 'ar' ? 'اليوم' : 'Today', groupedHistory.today)}
-              {renderGroup(language === 'ar' ? 'الأمس' : 'Yesterday', groupedHistory.yesterday)}
-              {renderGroup(language === 'ar' ? 'الأقدم' : 'Older', groupedHistory.older)}
+              {renderGroup(t.today || 'Today', groupedHistory.today)}
+              {renderGroup(t.yesterday || 'Yesterday', groupedHistory.yesterday)}
+              {renderGroup(t.older || 'Older', groupedHistory.older)}
             </>
           )}
         </div>

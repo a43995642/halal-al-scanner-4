@@ -250,7 +250,7 @@ export default function App() {
             payload: images,
             date: Date.now()
         });
-        showToast(language === 'ar' ? "أنت غير متصل. تم الحفظ في قائمة الانتظار." : "Offline. Saved to queue.");
+        showToast(t.offlineSavedToQueue || "Offline. Saved to queue.");
         setImages([]);
         return;
     }
@@ -390,7 +390,7 @@ export default function App() {
             payload: `BARCODE:${barcode}`,
             date: Date.now()
         });
-        showToast(language === 'ar' ? "أنت غير متصل. تم الحفظ في قائمة الانتظار." : "Offline. Saved to queue.");
+        showToast(t.offlineSavedToQueue || "Offline. Saved to queue.");
         setShowBarcodeModal(false);
         return;
     }
@@ -420,7 +420,7 @@ export default function App() {
             payload: text,
             date: Date.now()
         });
-        showToast(language === 'ar' ? "أنت غير متصل. تم الحفظ في قائمة الانتظار." : "Offline. Saved to queue.");
+        showToast(t.offlineSavedToQueue || "Offline. Saved to queue.");
         setShowTextModal(false);
         return;
     }

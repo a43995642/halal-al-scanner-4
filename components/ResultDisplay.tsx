@@ -131,6 +131,21 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({
     }
   };
 
+  const formatReason = (reason: string) => {
+    if (!reason) return '';
+    if (reason.startsWith('offlineResult\n')) {
+      const parts = reason.split('\n');
+      return `${t.offlineResult || 'Offline Result:'}\n${parts.slice(1).join('\n')}`;
+    }
+    if (reason.startsWith('error_')) {
+      const parts = reason.split('|');
+      const key = parts[0] as keyof typeof t;
+      const extra = parts.length > 1 ? ` (${parts.slice(1).join('|')})` : '';
+      return (t[key] || parts[0]) + extra;
+    }
+    return t[reason as keyof typeof t] || reason;
+  };
+
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none p-6 pb-48">
       {isLoading && (
@@ -174,7 +189,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({
                           </button>
                       </div>
                   </div>
-                  <p className="text-white text-base leading-relaxed font-medium whitespace-pre-wrap">{result.reason}</p>
+                  <p className="text-white text-base leading-relaxed font-medium whitespace-pre-wrap">{formatReason(result.reason)}</p>
               </div>
               
               {result.warnings && result.warnings.length > 0 && (
@@ -239,7 +254,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({
       )}
       {!isLoading && error && (
         <div className="w-full max-w-sm bg-red-900/90 backdrop-blur-md p-4 rounded-xl border border-red-500/50 text-white text-center pointer-events-auto">
-           <p className="font-bold mb-1">{t.analysisFailed}</p> <p className="text-sm opacity-80">{error}</p> <button onClick={resetApp} className="mt-3 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition">{t.retry}</button>
+           <p className="font-bold mb-1">{t.analysisFailed}</p> <p className="text-sm opacity-80 whitespace-pre-wrap">{formatReason(error)}</p> <button onClick={resetApp} className="mt-3 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition">{t.retry}</button>
         </div>
       )}
     </div>

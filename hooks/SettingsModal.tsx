@@ -202,7 +202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           await App.exitApp();
       } else {
           // Fallback for PWA/Browser (Usually won't work due to browser security, but good to have)
-          showAlert(t.exitApp, language === 'ar' ? "يرجى إغلاق المتصفح." : "Please close the browser tab.", 'info');
+          showAlert(t.exitApp, t.closeBrowserTab || "Please close the browser tab.", 'info');
       }
   };
 

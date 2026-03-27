@@ -50,9 +50,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const handlePurchase = async () => {
     if (!isProductsLoaded && Capacitor.isNativePlatform()) {
-        showAlert(t.errorTitle, lang === 'ar' 
-          ? "عذراً، المتجر غير متاح حالياً. يرجى المحاولة لاحقاً." 
-          : "Store is currently unavailable. Please try again later.", 'error');
+        showAlert(t.errorTitle, t.storeUnavailable || "Store is currently unavailable. Please try again later.", 'error');
         return;
     }
 
@@ -60,7 +58,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     try {
       if (Capacitor.isNativePlatform()) {
         if (!offerings || !offerings.current) {
-            showAlert(t.errorTitle, lang === 'ar' ? "لا توجد منتجات متاحة للشراء." : "No products available.", 'error');
+            showAlert(t.errorTitle, t.noProductsAvailable || "No products available.", 'error');
             setIsLoading(false);
             return;
         }
@@ -74,10 +72,10 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                onSubscribe();
                onClose();
                const alertType = selectedPlan === 'annual' ? 'success-gold' : 'success';
-               showAlert(t.activated, lang === 'ar' ? "تم تفعيل النسخة الكاملة بنجاح!" : "Full version activated successfully!", alertType);
+               showAlert(t.activated, t.fullVersionActivated || "Full version activated successfully!", alertType);
            }
         } else {
-           showAlert("Error", "Selected package not found in configuration.", 'error');
+           showAlert(t.errorTitle, t.packageNotFound || "Selected package not found in configuration.", 'error');
         }
       } else {
         // Fallback for Web Testing logic
@@ -87,7 +85,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         onSubscribe();
         onClose();
         const alertType = selectedPlan === 'annual' ? 'success-gold' : 'success';
-        showAlert(t.activated, lang === 'ar' ? "تم تفعيل النسخة التجريبية (محاكاة)" : "Simulation: Purchase Successful", alertType);
+        showAlert(t.activated, t.simulationPurchaseSuccess || "Simulation: Purchase Successful", alertType);
       }
     } catch (e: any) {
       if (!e.userCancelled) {
@@ -107,9 +105,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         onClose();
         // Since we don't know the exact plan type easily from restore without deeper check, we use generic success or check storage
         // But 'success' is safe here.
-        showAlert(t.activated, lang === 'ar' ? "تم استعادة مشترياتك بنجاح!" : "Purchases restored successfully!", 'success');
+        showAlert(t.activated, t.purchasesRestored || "Purchases restored successfully!", 'success');
       } else {
-        showAlert(t.errorTitle, lang === 'ar' ? "لم يتم العثور على اشتراكات سابقة." : "No active subscription found.", 'warning');
+        showAlert(t.errorTitle, t.noActiveSubscription || "No active subscription found.", 'warning');
       }
     } catch (e) {
       console.error(e);
@@ -215,7 +213,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               {!isProductsLoaded && Capacitor.isNativePlatform() ? (
                   <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-center">
                       <p className="text-yellow-400 text-xs font-bold">
-                          {lang === 'ar' ? "جاري الاتصال بالمتجر... يرجى الانتظار" : "Connecting to store..."}
+                          {t.connectingToStore || "Connecting to store..."}
                       </p>
                   </div>
               ) : (

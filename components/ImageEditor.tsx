@@ -137,7 +137,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({ imageSrc, onConfirm, o
          
          <div className="absolute bottom-32 left-0 right-0 flex justify-center z-20 pointer-events-none">
             <p className="text-white/50 text-xs bg-black/40 px-2 py-1 rounded backdrop-blur">
-               {language === 'ar' ? 'اسحب لتحريك الصورة داخل الإطار' : 'Drag to pan image inside crop box'}
+               {t.panHint || 'Drag to pan image inside crop box'}
             </p>
          </div>
       </div>

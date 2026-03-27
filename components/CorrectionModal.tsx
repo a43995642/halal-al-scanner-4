@@ -26,7 +26,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
     
     try {
         if (!isSupabaseConfigured) {
-            showAlert(t.errorTitle, language === 'ar' ? 'لم يتم إعداد قاعدة البيانات (Supabase) لحفظ التقارير.' : 'Supabase database is not configured to save reports.', 'error');
+            showAlert(t.errorTitle, t.dbNotConfigured || 'Supabase database is not configured to save reports.', 'error');
             setIsSending(false);
             return;
         }
@@ -52,9 +52,9 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
         onClose();
     } catch (e: any) {
         console.error("Report submission error:", e);
-        let errorMsg = e.message || (language === 'ar' ? 'حدث خطأ أثناء إرسال التقرير.' : 'An error occurred while sending the report.');
+        let errorMsg = e.message || (t.reportErrorMsg || 'An error occurred while sending the report.');
         if (errorMsg.includes('Failed to fetch')) {
-            errorMsg = language === 'ar' ? 'تعذر الاتصال بالخادم. تحقق من الإنترنت أو إعدادات قاعدة البيانات.' : 'Connection failed. Check internet or DB config.';
+            errorMsg = t.connectionFailed || 'Connection failed. Check internet or DB config.';
         }
         showAlert(t.errorTitle, errorMsg, 'error');
     } finally {

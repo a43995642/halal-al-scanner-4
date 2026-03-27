@@ -54,20 +54,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
              </div>
              
              <h3 className="text-xl font-bold text-white mb-3">
-                {language === 'ar' ? 'الخدمة السحابية غير مفعلة' : 'Cloud Service Not Configured'}
+                {t.cloudNotConfigured || 'Cloud Service Not Configured'}
              </h3>
              
              <p className="text-gray-400 text-sm mb-8 leading-relaxed">
-               {language === 'ar' 
-                 ? "لم يتم ربط قاعدة البيانات (Supabase) بهذا التطبيق بعد. يمكنك استخدام جميع ميزات الفحص والذكاء الاصطناعي كزائر بدون تسجيل."
-                 : "The database (Supabase) is not connected yet. You can still use all scanning and AI features as a guest."}
+               {t.cloudNotConfiguredDesc || "The database (Supabase) is not connected yet. You can still use all scanning and AI features as a guest."}
              </p>
 
              <button 
                 onClick={onClose} 
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-emerald-900/20 active:scale-[0.98]"
              >
-               {language === 'ar' ? 'متابعة كزائر' : 'Continue as Guest'}
+               {t.continueAsGuest || 'Continue as Guest'}
              </button>
           </div>
         </div>
@@ -129,9 +127,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     } catch (err: any) {
       console.error("Auth Error:", err);
       let msg = err.message;
-      if (msg.includes('User already registered')) msg = language === 'ar' ? 'هذا البريد مسجل مسبقاً، حاول تسجيل الدخول.' : 'User already registered. Please sign in.';
-      else if (msg.includes('Invalid login credentials')) msg = language === 'ar' ? 'بيانات الدخول غير صحيحة.' : 'Invalid email or password.';
-      else if (msg.includes('Failed to fetch')) msg = language === 'ar' ? 'تعذر الاتصال بالخادم. تحقق من الإنترنت أو إعدادات قاعدة البيانات.' : 'Connection failed. Check internet or DB config.';
+      if (msg.includes('User already registered')) msg = t.userAlreadyRegistered || 'User already registered. Please sign in.';
+      else if (msg.includes('Invalid login credentials')) msg = t.invalidCredentials || 'Invalid email or password.';
+      else if (msg.includes('Failed to fetch')) msg = t.connectionFailed || 'Connection failed. Check internet or DB config.';
       
       setError(msg || t.unexpectedError);
     } finally {
@@ -212,7 +210,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         showAlert(t.resendEmail, t.emailResent, 'success');
     } catch (e: any) {
         let msg = e.message;
-        if (msg.includes("Rate limit")) msg = language === 'ar' ? "الرجاء الانتظار قليلاً قبل إعادة المحاولة." : "Please wait before retrying.";
+        if (msg.includes("Rate limit")) msg = t.rateLimit || "Please wait before retrying.";
         showAlert(t.errorTitle, msg, 'warning');
     } finally {
         setIsResending(false);
@@ -236,15 +234,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
              <h3 className="text-xl font-bold text-white mb-3">{t.signupSuccess}</h3>
              
              <div className="bg-white/5 rounded-xl p-4 mb-6 border border-white/5 text-sm text-gray-300 leading-relaxed">
-               {language === 'ar' 
-                 ? <>تم إرسال رابط التفعيل إلى: <br/><span className="text-emerald-400 font-bold">{email}</span></>
-                 : <>Verification link sent to: <br/><span className="text-emerald-400 font-bold">{email}</span></>}
+               {t.verificationLinkSent || 'Verification link sent to:'} <br/><span className="text-emerald-400 font-bold">{email}</span>
              </div>
 
              <p className="text-gray-400 text-xs mb-8 leading-relaxed">
-               {language === 'ar' 
-                 ? "يرجى التحقق من بريدك الوارد (أو البريد المهمل/Spam) والضغط على الرابط للدخول تلقائياً للتطبيق."
-                 : "Please check your inbox (or Spam folder) and click the link to automatically log in to the app."}
+               {t.pleaseCheckInbox || 'Please check your inbox (or Spam folder) and click the link to automatically log in to the app.'}
              </p>
 
              <div className="flex flex-col gap-3">
@@ -252,7 +246,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     onClick={() => { setShowEmailSent(false); setIsLogin(true); }} 
                     className="w-full bg-white text-black font-bold py-3.5 rounded-xl transition hover:bg-gray-200"
                  >
-                   {language === 'ar' ? 'فهمت، العودة لتسجيل الدخول' : 'Got it, Back to Login'}
+                   {t.gotItLogin || 'Got it, Back to Login'}
                  </button>
                  
                  <button 
