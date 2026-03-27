@@ -310,7 +310,8 @@ const en: TranslationDictionary = {
   purchasesRestored: "Purchases restored successfully!",
   noActiveSubscription: "No active subscription found.",
   connectingToStore: "Connecting to store...",
-  pointCameraAt: "Point camera at the <strong class=\"text-white\">Ingredients List</strong>."
+  pointCameraAt: "Point camera at the <strong class=\"text-white\">Ingredients List</strong>.",
+  ingredientsMissing: "Product found but ingredients list is missing."
 };
 
 export default en;

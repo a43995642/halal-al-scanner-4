@@ -316,4 +316,5 @@ export interface TranslationDictionary {
   noActiveSubscription?: string;
   connectingToStore?: string;
   pointCameraAt?: string;
+  ingredientsMissing?: string;
 }

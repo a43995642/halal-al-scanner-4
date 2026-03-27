@@ -309,7 +309,8 @@ const ar: TranslationDictionary = {
   purchasesRestored: "تم استعادة مشترياتك بنجاح!",
   noActiveSubscription: "لم يتم العثور على اشتراكات سابقة.",
   connectingToStore: "جاري الاتصال بالمتجر... يرجى الانتظار",
-  pointCameraAt: "وجه الكاميرا نحو <strong class=\"text-white\">قائمة المكونات</strong> الخلفية."
+  pointCameraAt: "وجه الكاميرا نحو <strong class=\"text-white\">قائمة المكونات</strong> الخلفية.",
+  ingredientsMissing: "تم العثور على المنتج ولكن قائمة المكونات مفقودة."
 };
 
 export default ar;

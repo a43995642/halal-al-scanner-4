@@ -400,7 +400,7 @@ export default function App() {
       const product = await fetchProductByBarcode(barcode);
       if (!product) throw new Error("PRODUCT_NOT_FOUND");
       const ingredients = language === 'ar' ? (product.ingredients_text_ar || product.ingredients_text) : (product.ingredients_text_en || product.ingredients_text);
-      if (!ingredients) { setResult({ status: HalalStatus.DOUBTFUL, reason: "Product found but ingredients list is missing.", ingredientsDetected: [], confidence: 100 }); setIsLoading(false); return; }
+      if (!ingredients) { setResult({ status: HalalStatus.DOUBTFUL, reason: t.ingredientsMissing || "Product found but ingredients list is missing.", ingredientsDetected: [], confidence: 100 }); setIsLoading(false); return; }
       const finalText = `${t.barcodeTitle}: ${product.product_name || ''}\n\n${ingredients}`; handleAnalyzeText(finalText);
     } catch (err) { setError(t.barcodeNotFound); setIsLoading(false); }
   };
