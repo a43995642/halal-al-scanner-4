@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { supabase } from '../lib/supabase';
-// Removed User import to fix TS error
+import { auth, db } from '../lib/firebase';
+import { onAuthStateChanged, signOut, deleteUser } from 'firebase/auth';
+import { doc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -101,19 +102,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
      // 1. Get initial user
-     const getInitialUser = async () => {
-       const { data } = await supabase.auth.getUser();
-       setUser(data.user);
-     };
-     getInitialUser();
+     setUser(auth.currentUser);
 
      // 2. Listen for auth changes (Login/Logout) to update UI immediately
-     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-       setUser(session?.user || null);
+     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+       setUser(currentUser);
      });
 
      return () => {
-       subscription.unsubscribe();
+       unsubscribe();
      };
   }, []);
 
@@ -134,8 +131,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       setIsSigningOut(true);
 
       try {
-        // 1. Sign out from Supabase
-        await supabase.auth.signOut();
+        // 1. Sign out from Firebase
+        await signOut(auth);
         
         // 2. Also sign out from Google Plugin (Wrap in try/catch to avoid freezing if not initialized)
         try {
@@ -154,7 +151,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteAccount = async () => {
-    if (!user || user.role !== 'authenticated') return;
+    if (!user || user.isAnonymous) return;
 
     showConfirm(
       t.deleteAccount,
@@ -162,34 +159,48 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       async () => {
         setIsSigningOut(true);
         try {
-            // 1. Send deletion request to dedicated API
-            const baseUrl = getBaseUrl();
-            const response = await fetch(`${baseUrl}/api/delete-account`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id })
-            });
-
-            if (!response.ok) {
-              throw new Error("Deletion failed on server");
+            // 1. Delete user stats
+            try {
+                await deleteDoc(doc(db, 'user_stats', user.uid));
+            } catch (e) {
+                console.warn("Could not delete user_stats", e);
             }
 
-            // 2. Clear local data
+            // 2. Delete reports
+            try {
+                const q = query(collection(db, 'reports'), where('user_id', '==', user.uid));
+                const querySnapshot = await getDocs(q);
+                const deletePromises = querySnapshot.docs.map(d => deleteDoc(d.ref));
+                await Promise.all(deletePromises);
+            } catch (e) {
+                console.warn("Could not delete reports", e);
+            }
+
+            // 3. Clear local data
             onClearHistory();
             localStorage.clear();
 
-            // 3. Sign Out locally
-            await supabase.auth.signOut();
-             try { await GoogleAuth.signOut(); } catch (e) { /* ignore */ }
+            // 4. Delete Auth User
+            const currentUser = auth.currentUser;
+            if (currentUser) {
+                await deleteUser(currentUser);
+            }
+
+            // 5. Sign Out locally (if deleteUser didn't already)
+            try { await GoogleAuth.signOut(); } catch (e) { /* ignore */ }
 
             showAlert(t.deleteAccount, t.deleteAccountSuccess, 'success');
             setTimeout(() => {
                 window.location.reload();
             }, 2000);
 
-        } catch (e) {
+        } catch (e: any) {
             console.error("Delete Account Error", e);
-            showAlert(t.errorTitle, t.connectionError, 'error');
+            if (e.code === 'auth/requires-recent-login') {
+                showAlert(t.errorTitle, t.requiresRecentLogin || "Please sign out and sign in again to delete your account.", 'error');
+            } else {
+                showAlert(t.errorTitle, t.connectionError, 'error');
+            }
             setIsSigningOut(false);
         }
       },

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, sendEmailVerification, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { Capacitor } from '@capacitor/core';
@@ -35,7 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   };
 
   // --- HANDLE MISSING CONFIGURATION (GUEST MODE) ---
-  if (!isSupabaseConfigured) {
+  if (!isFirebaseConfigured) {
     return (
         <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" dir={dir}>
           <div className="bg-[#1e1e1e] rounded-3xl w-full max-w-sm shadow-2xl border border-white/10 animate-slide-up p-8 text-center relative overflow-hidden">
@@ -58,7 +59,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
              </h3>
              
              <p className="text-gray-400 text-sm mb-8 leading-relaxed">
-               {t.cloudNotConfiguredDesc || "The database (Supabase) is not connected yet. You can still use all scanning and AI features as a guest."}
+               {t.cloudNotConfiguredDesc || "The database (Firebase) is not connected yet. You can still use all scanning and AI features as a guest."}
              </p>
 
              <button 
@@ -92,31 +93,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     try {
       if (isLogin) {
         // --- LOGIN FLOW ---
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (signInError) throw signInError;
-        
+        await signInWithEmailAndPassword(auth, email, password);
         onSuccess();
         onClose();
       } else {
         // --- SIGN UP FLOW ---
-        const redirectUrl = getRedirectUrl();
-        console.log('Signing up with redirect to:', redirectUrl);
-
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: redirectUrl
-          }
-        });
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         
-        if (signUpError) throw signUpError;
-
         // التحقق مما إذا تم إنشاء الجلسة فوراً
-        if (data.session) {
+        if (userCredential.user) {
              onSuccess();
              onClose();
         } else {
@@ -127,9 +112,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     } catch (err: any) {
       console.error("Auth Error:", err);
       let msg = err.message;
-      if (msg.includes('User already registered')) msg = t.userAlreadyRegistered || 'User already registered. Please sign in.';
-      else if (msg.includes('Invalid login credentials')) msg = t.invalidCredentials || 'Invalid email or password.';
-      else if (msg.includes('Failed to fetch')) msg = t.connectionFailed || 'Connection failed. Check internet or DB config.';
+      if (msg.includes('email-already-in-use')) msg = t.userAlreadyRegistered || 'User already registered. Please sign in.';
+      else if (msg.includes('invalid-credential')) msg = t.invalidCredentials || 'Invalid email or password.';
+      else if (msg.includes('network-request-failed')) msg = t.connectionFailed || 'Connection failed. Check internet or DB config.';
       
       setError(msg || t.unexpectedError);
     } finally {
@@ -141,54 +126,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     setError(null);
     try {
       if (Capacitor.isNativePlatform()) {
-        // 1. Try Native Google Auth First (Requires SHA-1 configured)
+        // Native Google Auth (Requires SHA-1 configured)
         try {
             const googleUser = await GoogleAuth.signIn();
             const idToken = googleUser.authentication.idToken;
 
             if (!idToken) throw new Error('No ID Token returned from Google.');
 
-            const { error } = await supabase.auth.signInWithIdToken({
-              provider: 'google',
-              token: idToken,
-            });
-
-            if (error) throw error;
+            const credential = GoogleAuthProvider.credential(idToken);
+            await signInWithCredential(auth, credential);
             onSuccess();
             onClose();
-            return; // Success, exit function
+            return;
         } catch (nativeErr) {
-            console.warn("Native Google Auth failed, falling back to Web OAuth:", nativeErr);
-            // If Native fails (e.g. SHA-1 mismatch), fall through to Web OAuth below
+            console.warn("Native Google Auth failed:", nativeErr);
+            throw nativeErr;
         }
       }
 
-      // 2. Web OAuth Fallback (Opens Browser Safely to avoid 403 disallowed_useragent)
-      const redirectUrl = getRedirectUrl();
-      console.log("Starting OAuth with redirect:", redirectUrl);
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-           redirectTo: redirectUrl,
-           queryParams: { access_type: 'offline', prompt: 'consent' },
-           skipBrowserRedirect: true // CRITICAL: Prevent Supabase from trying to open in WebView
-        }
-      });
-      
-      if (error) throw error;
-      
-      // Manually open the URL in Chrome Custom Tabs (Allowed User Agent)
-      if (data?.url) {
-         await Browser.open({ url: data.url });
-         // We close the modal, assuming the app will handle the redirect via Deep Link in App.tsx
-         onClose(); 
-      }
+      // Web OAuth
+      await signInWithPopup(auth, googleProvider);
+      onSuccess();
+      onClose();
       
     } catch (err: any) {
       console.error("Google Auth Error:", err);
       const msg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
-      if (msg.includes('closed') || msg.includes('cancelled')) return;
+      if (msg.includes('closed') || msg.includes('cancelled') || msg.includes('popup-closed-by-user')) return;
       setError(msg.length > 100 ? msg.substring(0, 100) + '...' : msg);
     }
   };
@@ -196,21 +160,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const handleResendEmail = async () => {
     setIsResending(true);
     try {
-        const redirectUrl = getRedirectUrl();
-
-        const { error } = await supabase.auth.resend({
-            type: 'signup',
-            email: email,
-            options: {
-                emailRedirectTo: redirectUrl
-            }
-        });
-
-        if (error) throw error;
-        showAlert(t.resendEmail, t.emailResent, 'success');
+        if (auth.currentUser) {
+            await sendEmailVerification(auth.currentUser);
+            showAlert(t.resendEmail, t.emailResent, 'success');
+        } else {
+            throw new Error("No user logged in");
+        }
     } catch (e: any) {
         let msg = e.message;
-        if (msg.includes("Rate limit")) msg = t.rateLimit || "Please wait before retrying.";
+        if (msg.includes("too-many-requests")) msg = t.rateLimit || "Please wait before retrying.";
         showAlert(t.errorTitle, msg, 'warning');
     } finally {
         setIsResending(false);

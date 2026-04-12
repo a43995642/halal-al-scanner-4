@@ -11,7 +11,8 @@ const config: CapacitorConfig = {
     cleartext: true,
     allowNavigation: [
       "*.vercel.app",
-      "*.supabase.co",
+      "*.firebaseapp.com",
+      "*.googleapis.com",
       "accounts.google.com",
       "world.openfoodfacts.org"
     ]

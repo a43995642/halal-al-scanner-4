@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { HalalStatus, ScanResult } from '../types';
 import { useAlert } from '../contexts/AlertContext';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { db, isFirebaseConfigured, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CorrectionModalProps {
   onClose: () => void;
@@ -25,35 +26,27 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
     setIsSending(true);
     
     try {
-        if (!isSupabaseConfigured) {
-            showAlert(t.errorTitle, t.dbNotConfigured || 'Supabase database is not configured to save reports.', 'error');
+        if (!isFirebaseConfigured) {
+            showAlert(t.errorTitle, t.dbNotConfigured || 'Firebase database is not configured to save reports.', 'error');
             setIsSending(false);
             return;
         }
 
-        const { error } = await supabase
-            .from('reports')
-            .insert([
-                {
-                    user_id: userId === 'anonymous' ? null : userId,
-                    original_text: analyzedText || result.reason,
-                    ai_result: result,
-                    user_correction: selectedStatus,
-                    user_notes: notes
-                }
-            ]);
-
-        if (error) {
-            console.error("Supabase Insert Error:", error);
-            throw error;
-        }
+        await addDoc(collection(db, 'reports'), {
+            user_id: userId === 'anonymous' ? null : userId,
+            original_text: analyzedText || result.reason,
+            ai_result: result,
+            user_correction: selectedStatus,
+            user_notes: notes,
+            created_at: serverTimestamp()
+        });
         
         showAlert(t.sendReport, t.reportSent, 'success');
         onClose();
     } catch (e: any) {
         console.error("Report submission error:", e);
         let errorMsg = e.message || (t.reportErrorMsg || 'An error occurred while sending the report.');
-        if (errorMsg.includes('Failed to fetch')) {
+        if (errorMsg.includes('Failed to fetch') || errorMsg.includes('offline')) {
             errorMsg = t.connectionFailed || 'Connection failed. Check internet or DB config.';
         }
         showAlert(t.errorTitle, errorMsg, 'error');

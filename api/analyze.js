@@ -3,26 +3,32 @@
 // This runs on the server. The API Key is SAFE here.
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { createClient } from '@supabase/supabase-js';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 // Configuration from Environment Variables
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-// Use SERVICE_ROLE_KEY for admin privileges (bypasses RLS to write scan counts safely)
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+// We'll use the client config since we just need to read/write to Firestore.
+// Note: In a real production environment, you'd use firebase-admin with a service account
+// to bypass security rules. Here we assume the server has access or we use a specific auth.
+const firebaseConfig = {
+  projectId: "gen-lang-client-0173002338",
+  appId: "1:169103756685:web:e0df3273bac058b49f41c4",
+  apiKey: "AIzaSyCZxgtoCFDTbVt6Kil-IwsvylSHywb6Gdg",
+  authDomain: "gen-lang-client-0173002338.firebaseapp.com",
+  storageBucket: "gen-lang-client-0173002338.firebasestorage.app",
+  messagingSenderId: "169103756685",
+  measurementId: ""
+};
 
 // MINIMUM ALLOWED VERSION
-// أي نسخة تطبيق لا ترسل هذا الإصدار أو أعلى سيتم رفضها فوراً
 const MIN_APP_VERSION = "2.2.0";
 
-// Initialize Supabase Admin Client
-// We use a try-catch or safe init to prevent crash on module load if keys are missing
-let supabase;
+let db;
 try {
-    if (supabaseUrl && supabaseKey) {
-        supabase = createClient(supabaseUrl, supabaseKey);
-    }
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app, "ai-studio-02964cf0-58a8-4cf7-bb15-c51b69cf1fac");
 } catch (e) {
-    console.error("Failed to init Supabase client:", e);
+    console.error("Failed to init Firebase client:", e);
 }
 
 export default async function handler(request, response) {
@@ -45,10 +51,8 @@ export default async function handler(request, response) {
 
   try {
     // --- KILL SWITCH LOGIC ---
-    // Check for App Version Header
     const appVersion = request.headers['x-app-version'];
     
-    // إذا لم يرسل التطبيق رقم الإصدار (النسخ القديمة) أو كان الإصدار قديماً
     if (!appVersion || appVersion < MIN_APP_VERSION) {
         return response.status(426).json({ 
             error: 'UPDATE_REQUIRED', 
@@ -60,10 +64,9 @@ export default async function handler(request, response) {
 
     const { images, text, dietaryPreferences: bodyDietaryPrefs, isPremium: bodyIsPremium } = request.body;
     const userId = request.headers['x-user-id'];
-    const language = request.headers['x-language'] || 'ar'; // Default to Arabic
-    const ingredientMode = request.headers['x-ingredient-language'] || 'app'; // 'app' (translated) or 'original'
+    const language = request.headers['x-language'] || 'ar'; 
+    const ingredientMode = request.headers['x-ingredient-language'] || 'app'; 
     
-    // Fallback to headers if body doesn't have them (for backward compatibility)
     const dietaryPrefsHeader = request.headers['x-dietary-preferences'];
     let dietaryPreferences = bodyDietaryPrefs || [];
     if (!bodyDietaryPrefs && dietaryPrefsHeader) {
@@ -72,7 +75,6 @@ export default async function handler(request, response) {
         } catch(e) {}
     }
     
-    // Commercial Mode: Use Developer Key Only
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
@@ -84,25 +86,21 @@ export default async function handler(request, response) {
     }
 
     // Check User Stats
-    // Always check quota since custom keys are no longer allowed
-    if (userId && userId !== 'anonymous' && supabase) {
+    if (userId && userId !== 'anonymous' && db) {
         try {
-            const { data: userStats, error: dbError } = await supabase
-              .from('user_stats')
-              .select('scan_count, is_premium')
-              .eq('id', userId)
-              .single();
+            const docRef = doc(db, 'user_stats', userId);
+            const docSnap = await getDoc(docRef);
             
             let currentCount = 0;
-            let isPremium = bodyIsPremium !== undefined ? bodyIsPremium : (request.headers['x-is-premium'] === 'true'); // Trust client for now to avoid sync issues with RevenueCat
+            let isPremium = bodyIsPremium !== undefined ? bodyIsPremium : (request.headers['x-is-premium'] === 'true');
 
-            if (userStats) {
-                currentCount = userStats.scan_count;
-                // If DB says premium, trust DB. If client says premium, trust client.
+            if (docSnap.exists()) {
+                const userStats = docSnap.data();
+                currentCount = userStats.scan_count || 0;
                 isPremium = isPremium || userStats.is_premium;
             } 
             
-            if (!isPremium && currentCount >= 3 && !dbError) {
+            if (!isPremium && currentCount >= 3) {
                  return response.status(403).json({ error: 'LIMIT_REACHED', message: 'Upgrade required' });
             }
         } catch (dbEx) {
@@ -254,7 +252,6 @@ Output: JSON ONLY. No Markdown.
         parts.push({ text: `Analysis Request: Please evaluate this ingredient list: \n${text}` });
     }
 
-    // Explicitly request JSON structure in the prompt as well to reinforce the schema
     parts.push({ text: "Return valid JSON object strictly matching the schema. No markdown." });
 
     if (parts.length <= 1) { 
@@ -308,7 +305,6 @@ Output: JSON ONLY. No Markdown.
 
     let result;
     try {
-        // Double cleanup just in case Gemini sends markdown despite instructions
         const cleanText = modelResponse.text.replace(/```json/g, '').replace(/```/g, '').trim();
         result = JSON.parse(cleanText);
 
@@ -317,7 +313,6 @@ Output: JSON ONLY. No Markdown.
             let hasHaram = false;
             let hasDoubtful = false;
 
-            // Local Database of E-Numbers and Ingredients (Expanded & Comprehensive)
             const haramRegex = /\b(e120|carmine|cochineal|carminic acid|pork|lard|bacon|ham|porcine|swine|ethanol|wine|beer|rum|liquor|liqueur|brandy|cognac|tequila|vodka|whiskey|gin|champagne|sake|mirin|e904|shellac|confectioner's glaze|pork fat|pork gelatin)\b/i;
             
             const doubtfulRegex = /\b(e153|e160a|e252|e270|e322|e325|e326|e327|e422|e430|e431|e432|e433|e434|e435|e436|e441|e442|e470|e470a|e470b|e471|e472[a-f]?|e473|e474|e475|e476|e477|e478|e479b?|e481|e482|e483|e491|e492|e493|e494|e495|e542|e570|e572|e627|e631|e635|e640|e920|e921|e1518|mono- and diglycerides|polyglycerol polyricinoleate|sodium stearoyl-2-lactylate|calcium stearoyl-2-lactylate|bone phosphate|stearic acid|magnesium stearate|disodium inosinate|disodium ribonucleotides|glycine|glyceryl triacetate|triacetin|rennet|whey|pepsin|lipase|enzymes|glycerin|glycerol|flavoring|natural flavor|artificial flavor|gelatin|gelatine|shortening|tallow|suet|animal fat|animal shortening|polysorbate|vanilla extract|l-cysteine|l-cistein|l-cystine)\b/i;
@@ -361,7 +356,6 @@ Output: JSON ONLY. No Markdown.
             
             const severity = { "HALAL": 0, "DOUBTFUL": 1, "HARAM": 2 };
             
-            // "أسوأ مكون يحدد النتيجة النهائية"
             if (severity[smartResult.status] >= severity[result.status]) {
                 result.status = smartResult.status;
                 result.reason = smartResult.reason;
@@ -369,10 +363,9 @@ Output: JSON ONLY. No Markdown.
                 result.reason = smartResult.reason;
             }
 
-            // --- AUTO-LEARNING CACHE SYSTEM (SUPABASE) ---
-            if (supabase) {
+            // --- AUTO-LEARNING CACHE SYSTEM (FIRESTORE) ---
+            if (db) {
                 try {
-                    // 1. Collect unique ingredient names (limit length to avoid caching full sentences)
                     const namesToCache = new Set();
                     const extractNames = (ing) => {
                         if (ing.name && ing.name.length < 50) {
@@ -384,36 +377,44 @@ Output: JSON ONLY. No Markdown.
                     const namesArray = Array.from(namesToCache);
 
                     if (namesArray.length > 0) {
-                        // 2. Fetch existing ingredients from DB
-                        const { data: cachedIngredients, error: fetchError } = await supabase
-                            .from('ingredient_cache')
-                            .select('name, status')
-                            .in('name', namesArray);
-
                         const cacheMap = {};
-                        if (cachedIngredients && !fetchError) {
-                            cachedIngredients.forEach(row => {
-                                cacheMap[row.name] = row.status;
-                            });
+                        
+                        // Fetch existing from Firestore
+                        // Note: Firestore 'in' queries are limited to 10 items.
+                        // For simplicity, we'll just fetch them individually or in chunks of 10.
+                        const chunks = [];
+                        for (let i = 0; i < namesArray.length; i += 10) {
+                            chunks.push(namesArray.slice(i, i + 10));
+                        }
+                        
+                        for (const chunk of chunks) {
+                            // In a real app we'd use a query with 'in', but since we're in a serverless function
+                            // we can just fetch the documents directly if we use the name as the document ID.
+                            // Let's assume the document ID is the ingredient name (sanitized).
+                            for (const name of chunk) {
+                                const safeId = encodeURIComponent(name).replace(/\./g, '%2E');
+                                const docRef = doc(db, 'ingredient_cache', safeId);
+                                const docSnap = await getDoc(docRef);
+                                if (docSnap.exists()) {
+                                    cacheMap[name] = docSnap.data().status;
+                                }
+                            }
                         }
 
                         const newToCache = [];
 
-                        // 3. Apply cache to current ingredients and collect new ones
                         const applyCache = (ing) => {
                             if (!ing.name) return;
                             const nameLower = ing.name.toLowerCase().trim();
                             
                             if (cacheMap[nameLower]) {
-                                // If DB has a status, enforce it (especially if it's worse)
                                 const cachedStatus = cacheMap[nameLower];
                                 if (severity[cachedStatus] >= severity[ing.status]) {
                                     ing.status = cachedStatus;
                                 }
                             } else if (nameLower.length < 50) {
-                                // New ingredient: prepare to save it to DB
                                 newToCache.push({ name: nameLower, status: ing.status });
-                                cacheMap[nameLower] = ing.status; // Prevent duplicates in this run
+                                cacheMap[nameLower] = ing.status; 
                             }
 
                             if (ing.subIngredients) ing.subIngredients.forEach(applyCache);
@@ -421,12 +422,15 @@ Output: JSON ONLY. No Markdown.
 
                         result.ingredientsDetected.forEach(applyCache);
 
-                        // 4. Save new ingredients to DB (Upsert)
+                        // Save new ingredients to DB
                         if (newToCache.length > 0) {
-                            await supabase.from('ingredient_cache').upsert(newToCache, { onConflict: 'name' });
+                            for (const item of newToCache) {
+                                const safeId = encodeURIComponent(item.name).replace(/\./g, '%2E');
+                                const docRef = doc(db, 'ingredient_cache', safeId);
+                                await setDoc(docRef, { name: item.name, status: item.status }, { merge: true });
+                            }
                         }
 
-                        // 5. Re-evaluate final product status just in case the cache worsened an ingredient
                         let finalStatus = "HALAL";
                         let hasHaram = false;
                         let hasDoubtful = false;
@@ -443,7 +447,6 @@ Output: JSON ONLY. No Markdown.
                         
                         if (severity[finalStatus] > severity[result.status]) {
                             result.status = finalStatus;
-                            // Update reason text based on language
                             const texts = {
                                 HARAM: "smartHaram",
                                 DOUBTFUL: "smartDoubtful"
@@ -453,7 +456,6 @@ Output: JSON ONLY. No Markdown.
                     }
                 } catch (cacheErr) {
                     console.error("Cache system error:", cacheErr);
-                    // Fail silently so the user still gets their result even if DB fails
                 }
             }
             // ---------------------------------------------
@@ -462,7 +464,6 @@ Output: JSON ONLY. No Markdown.
 
     } catch (e) {
         console.warn("Failed to parse AI response:", modelResponse.text);
-        // Fallback result instead of 500 error
         
         result = { 
             status: "DOUBTFUL", 
@@ -473,9 +474,10 @@ Output: JSON ONLY. No Markdown.
     }
 
     // Increment scan count 
-    if (userId && userId !== 'anonymous' && supabase) {
+    if (userId && userId !== 'anonymous' && db) {
        try {
-           await supabase.rpc('increment_scan_count', { row_id: userId });
+           const docRef = doc(db, 'user_stats', userId);
+           await setDoc(docRef, { scan_count: increment(1) }, { merge: true });
        } catch (statsErr) {
            console.error("Failed to update stats", statsErr);
        }
@@ -496,7 +498,6 @@ Output: JSON ONLY. No Markdown.
          });
     }
 
-    // Handle Quota/Rate Limit Errors (429)
     if (error.message?.includes('429') || error.status === 429 || error.code === 429 || error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('503') || error.status === 503 || error.code === 503 || error.message?.includes('500') || error.status === 500 || error.code === 500) {
          
          return response.status(200).json({
@@ -519,7 +520,6 @@ function analyzeIngredients(ingredients, language) {
     let hasHaram = false;
     let hasUnknown = false;
 
-    // القوائم المبدئية (Initial Lists)
     const haramList = ['alcohol', 'ethanol', 'pork', 'gelatin'];
     const unknownList = ['flavor', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
     const safeList = ['water', 'sugar', 'salt', 'corn starch', 'vanilla powder'];
@@ -528,20 +528,17 @@ function analyzeIngredients(ingredients, language) {
         if (!ing || !ing.name) return;
         const nameLower = ing.name.toLowerCase();
         
-        // 1. Check Haram
         let isHaram = false;
         for (const h of haramList) {
             if (nameLower.includes(h)) {
-                // Exception: gelatin (إذا لم يذكر حلال)
                 if (h === 'gelatin' && nameLower.includes('halal')) {
-                    continue; // Skip if it explicitly says halal gelatin
+                    continue; 
                 }
                 isHaram = true;
                 break;
             }
         }
 
-        // 2. Check Unknown
         let isUnknown = false;
         if (!isHaram) {
             for (const u of unknownList) {
@@ -552,7 +549,6 @@ function analyzeIngredients(ingredients, language) {
             }
         }
 
-        // 3. Check Safe
         let isSafe = false;
         if (!isHaram && !isUnknown) {
             for (const s of safeList) {
@@ -563,7 +559,6 @@ function analyzeIngredients(ingredients, language) {
             }
         }
 
-        // Update ingredient status based on lists
         if (isHaram) {
             ing.status = "HARAM";
             hasHaram = true;
@@ -577,12 +572,10 @@ function analyzeIngredients(ingredients, language) {
                 ing.status = "HALAL";
             }
         } else {
-            // If not in any list, respect existing status from AI/Regex
             if (ing.status === "HARAM") hasHaram = true;
             if (ing.status === "DOUBTFUL") hasUnknown = true;
         }
 
-        // Recursively check sub-ingredients
         if (ing.subIngredients && Array.isArray(ing.subIngredients)) {
             ing.subIngredients.forEach(sub => checkIng(sub));
         }
@@ -592,12 +585,10 @@ function analyzeIngredients(ingredients, language) {
         ingredients.forEach(ing => checkIng(ing));
     }
 
-    // Determine final result based on the worst ingredient
     let finalStatus = "HALAL";
     if (hasHaram) finalStatus = "HARAM";
     else if (hasUnknown) finalStatus = "DOUBTFUL";
 
-    // النصوص الجاهزة للعرض (Display Texts)
     const texts = {
         HARAM: "smartHaram",
         DOUBTFUL: "smartDoubtful",
@@ -609,5 +600,3 @@ function analyzeIngredients(ingredients, language) {
         reason: texts[finalStatus]
     };
 }
-// ----------------------------------------------
-    

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { auth, db } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { PurchaseService } from '../services/purchaseService';
 
@@ -19,10 +21,15 @@ export const useAuthAndSubscription = () => {
     // We check RevenueCat status on login too
     PurchaseService.logIn(uid);
     // Keep local DB check for scan counts if needed
-    const { data } = await supabase.from('user_stats').select('scan_count').eq('id', uid).single(); 
-    if (data) { 
-        setScanCount(data.scan_count); 
-    } 
+    try {
+        const docRef = doc(db, 'user_stats', uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            setScanCount(docSnap.data().scan_count || 0);
+        }
+    } catch (e) {
+        console.error("Error fetching user stats:", e);
+    }
   };
 
   useEffect(() => {
@@ -37,29 +44,12 @@ export const useAuthAndSubscription = () => {
     }
     
     let mounted = true;
-    const initAuth = async () => {
-        try {
-            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Auth Timeout")), 5000));
-            const authPromise = supabase.auth.getSession();
-            const { data } = await Promise.race([authPromise, timeout]) as any;
-
-            if (mounted && data?.session?.user) {
-                setUserId(data.session.user.id);
-                fetchUserStats(data.session.user.id).catch(console.error);
-            }
-        } catch (e) {
-            console.warn("Auth initialization skipped:", e);
-        } finally {
-            if (mounted) setIsAuthLoading(false);
-        }
-    };
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+    
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
         if (!mounted) return;
-        if (session?.user) {
-            setUserId(session.user.id);
-            fetchUserStats(session.user.id).catch(console.error);
+        if (user) {
+            setUserId(user.uid);
+            fetchUserStats(user.uid).catch(console.error);
         } else {
             setUserId(null);
             // Revert to local guest count
@@ -73,7 +63,7 @@ export const useAuthAndSubscription = () => {
 
     return () => {
         mounted = false;
-        subscription.unsubscribe();
+        unsubscribe();
     };
   }, []);
 

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { supabase } from '../lib/supabase';
+import { auth } from '../lib/firebase';
+import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 
 interface UseAppListenersProps {
   stateRef: React.MutableRefObject<any>;
@@ -75,29 +76,18 @@ export const useAppListeners = ({
       // Handle Deep Link from OAuth (for fallback flow in Chrome Custom Tabs)
       urlListener = await CapacitorApp.addListener('appUrlOpen', async ({ url }) => {
          try {
-             // Basic Check if URL is relevant to Auth
-             if (url.includes('access_token') || url.includes('refresh_token') || url.includes('code=')) {
-                 // Try to exchange code if present (PKCE) or extract tokens
-                 const urlObj = new URL(url);
-                 const params = new URLSearchParams(urlObj.search || urlObj.hash.substring(1));
-                 
-                 const code = params.get('code');
-                 const accessToken = params.get('access_token');
-                 const refreshToken = params.get('refresh_token');
-
-                 if (code) {
-                     await supabase.auth.exchangeCodeForSession(code);
-                 } else if (accessToken && refreshToken) {
-                     await supabase.auth.setSession({
-                         access_token: accessToken,
-                         refresh_token: refreshToken,
-                     });
+             if (isSignInWithEmailLink(auth, url)) {
+                 let email = window.localStorage.getItem('emailForSignIn');
+                 if (!email) {
+                     email = window.prompt('Please provide your email for confirmation');
                  }
-                 
-                 // Close auth modal if open
-                 setShowAuthModal(false);
-                 setShowAuthSuccess(true);
-                 setTimeout(() => setShowAuthSuccess(false), 4000);
+                 if (email) {
+                     await signInWithEmailLink(auth, email, url);
+                     window.localStorage.removeItem('emailForSignIn');
+                     setShowAuthModal(false);
+                     setShowAuthSuccess(true);
+                     setTimeout(() => setShowAuthSuccess(false), 4000);
+                 }
              }
          } catch (e) {
              console.error("Deep Link Auth Error:", e);
