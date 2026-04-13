@@ -100,14 +100,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         // --- SIGN UP FLOW ---
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         
-        // التحقق مما إذا تم إنشاء الجلسة فوراً
-        if (userCredential.user) {
-             onSuccess();
-             onClose();
-        } else {
-             // تم إنشاء الحساب ولكن يتطلب تفعيل الإيميل
-             setShowEmailSent(true);
-        }
+        // إرسال رسالة التحقق
+        await sendEmailVerification(userCredential.user);
+        
+        // إظهار رسالة للمستخدم لتأكيد البريد الإلكتروني
+        setShowEmailSent(true);
+        // لا نغلق النافذة ولا نستدعي onSuccess حتى يؤكد المستخدم بريده
       }
     } catch (err: any) {
       console.error("Auth Error:", err);
