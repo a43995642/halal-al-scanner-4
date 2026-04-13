@@ -98,7 +98,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         if (!userCredential.user.emailVerified) {
             // تسجيل الخروج فوراً إذا لم يكن البريد مؤكداً
             await signOut(auth);
-            setError(t.pleaseCheckInbox || 'Please verify your email before logging in.');
+            // بدلاً من إظهار رسالة خطأ فقط، نظهر شاشة "تم إرسال الرابط" ليتيح له إعادة الإرسال
+            setShowEmailSent(true);
             return;
         }
         
@@ -169,11 +170,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const handleResendEmail = async () => {
     setIsResending(true);
     try {
-        if (auth.currentUser) {
-            await sendEmailVerification(auth.currentUser);
+        // إذا لم يكن المستخدم مسجل الدخول (لأننا سجلنا خروجه)، نحتاج لتسجيل دخوله مؤقتاً لإرسال الرسالة
+        let currentUser = auth.currentUser;
+        
+        if (!currentUser && email && password) {
+             const userCred = await signInWithEmailAndPassword(auth, email, password);
+             currentUser = userCred.user;
+        }
+
+        if (currentUser) {
+            await sendEmailVerification(currentUser);
             showAlert(t.resendEmail, t.emailResent, 'success');
+            // تسجيل الخروج مرة أخرى بعد الإرسال
+            await signOut(auth);
         } else {
-            throw new Error("No user logged in");
+            throw new Error("Could not authenticate to resend email.");
         }
     } catch (e: any) {
         let msg = e.message;
