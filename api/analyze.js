@@ -11,13 +11,13 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, increment } from 'firebas
 // Note: In a real production environment, you'd use firebase-admin with a service account
 // to bypass security rules. Here we assume the server has access or we use a specific auth.
 const firebaseConfig = {
-  projectId: "gen-lang-client-0173002338",
-  appId: "1:169103756685:web:e0df3273bac058b49f41c4",
-  apiKey: "AIzaSyCZxgtoCFDTbVt6Kil-IwsvylSHywb6Gdg",
-  authDomain: "gen-lang-client-0173002338.firebaseapp.com",
-  storageBucket: "gen-lang-client-0173002338.firebasestorage.app",
-  messagingSenderId: "169103756685",
-  measurementId: ""
+  projectId: process.env.FIREBASE_PROJECT_ID || "gen-lang-client-0173002338",
+  appId: process.env.FIREBASE_APP_ID || "1:169103756685:web:e0df3273bac058b49f41c4",
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyCZxgtoCFDTbVt6Kil-IwsvylSHywb6Gdg",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "gen-lang-client-0173002338.firebaseapp.com",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "gen-lang-client-0173002338.firebasestorage.app",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "169103756685",
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || ""
 };
 
 // MINIMUM ALLOWED VERSION
@@ -26,7 +26,8 @@ const MIN_APP_VERSION = "2.2.0";
 let db;
 try {
     const app = initializeApp(firebaseConfig);
-    db = getFirestore(app, "ai-studio-02964cf0-58a8-4cf7-bb15-c51b69cf1fac");
+    const databaseId = process.env.FIREBASE_DATABASE_ID || "ai-studio-02964cf0-58a8-4cf7-bb15-c51b69cf1fac";
+    db = getFirestore(app, databaseId);
 } catch (e) {
     console.error("Failed to init Firebase client:", e);
 }
@@ -163,7 +164,8 @@ If ANY ingredient violates these preferences (e.g., contains dairy for Dairy All
    - HARAM: Clearly prohibited ingredients like Pork, Lard, Bacon, Alcohol/Ethanol, Wine, Beer, Rum, Gelatin (from pork), Carmine/E120, Shellac, L-Cysteine (human/hair).
    - IMPORTANT: Marine animals and fish like Anchovy are HALAL and do NOT require slaughtering. Never classify them as HARAM or DOUBTFUL based on slaughtering.
    - IMPORTANT: Do NOT classify any product as HARAM unless there is a clear, explicit HARAM ingredient.
-   - IMPORTANT - MEAT & POULTRY: Any meat or poultry ingredient (e.g., Beef, Chicken, Lamb, Meat Extract, Chicken Broth, Animal Fat) MUST be classified as DOUBTFUL unless the packaging explicitly states it is "Halal Certified" or "Zabiha". Do not assume meat is Halal or Haram without explicit certification or source information.`;
+   - IMPORTANT - MEAT & POULTRY: Any meat or poultry ingredient (e.g., Beef, Chicken, Lamb, Meat Extract, Chicken Broth, Animal Fat) MUST be classified as DOUBTFUL unless the packaging explicitly states it is "Halal Certified" or "Zabiha". Do not assume meat is Halal or Haram without explicit certification or source information.
+   - RULE TAGGING: You MUST assign a specific "rule_id" to EVERY ingredient based on why it received its status. Choose from: "RULE_HALAL_NATURAL", "RULE_HALAL_MARINE", "RULE_HARAM_PORK", "RULE_HARAM_ALCOHOL", "RULE_HARAM_INSECTS", "RULE_DOUBTFUL_UNSPECIFIED", "RULE_DOUBTFUL_MEAT", "RULE_OTHER".`;
 
     const systemInstruction = `
 You are an expert Islamic ${productContext} (OCR & Analysis).
@@ -276,13 +278,15 @@ Output: JSON ONLY. No Markdown.
                     properties: { 
                         name: {type: Type.STRING}, 
                         status: {type: Type.STRING},
+                        rule_id: {type: Type.STRING},
                         subIngredients: {
                             type: Type.ARRAY,
                             items: {
                                 type: Type.OBJECT,
                                 properties: {
                                     name: {type: Type.STRING},
-                                    status: {type: Type.STRING}
+                                    status: {type: Type.STRING},
+                                    rule_id: {type: Type.STRING}
                                 }
                             }
                         }
@@ -323,9 +327,15 @@ Output: JSON ONLY. No Markdown.
                 if (haramRegex.test(ing.name)) {
                     ing.status = "HARAM";
                     hasHaram = true;
+                    if (/pork|lard|bacon|ham|porcine|swine/i.test(ing.name)) ing.rule_id = "RULE_HARAM_PORK";
+                    else if (/e120|carmine|cochineal|shellac/i.test(ing.name)) ing.rule_id = "RULE_HARAM_INSECTS";
+                    else ing.rule_id = "RULE_HARAM_ALCOHOL";
                 } else if (doubtfulRegex.test(ing.name) && ing.status !== "HARAM") {
                     ing.status = "DOUBTFUL";
+                    ing.rule_id = "RULE_DOUBTFUL_UNSPECIFIED";
                     hasDoubtful = true;
+                } else if (!ing.rule_id) {
+                    ing.rule_id = "RULE_OTHER";
                 }
                 
                 if (ing.subIngredients && Array.isArray(ing.subIngredients)) {
@@ -396,7 +406,7 @@ Output: JSON ONLY. No Markdown.
                                 const docRef = doc(db, 'ingredient_cache', safeId);
                                 const docSnap = await getDoc(docRef);
                                 if (docSnap.exists()) {
-                                    cacheMap[name] = docSnap.data().status;
+                                    cacheMap[name] = docSnap.data();
                                 }
                             }
                         }
@@ -408,13 +418,14 @@ Output: JSON ONLY. No Markdown.
                             const nameLower = ing.name.toLowerCase().trim();
                             
                             if (cacheMap[nameLower]) {
-                                const cachedStatus = cacheMap[nameLower];
-                                if (severity[cachedStatus] >= severity[ing.status]) {
-                                    ing.status = cachedStatus;
+                                const cachedData = cacheMap[nameLower];
+                                if (severity[cachedData.status] >= severity[ing.status]) {
+                                    ing.status = cachedData.status;
+                                    if (cachedData.rule_id) ing.rule_id = cachedData.rule_id;
                                 }
                             } else if (nameLower.length < 50) {
-                                newToCache.push({ name: nameLower, status: ing.status });
-                                cacheMap[nameLower] = ing.status; 
+                                newToCache.push({ name: nameLower, status: ing.status, rule_id: ing.rule_id || "RULE_OTHER" });
+                                cacheMap[nameLower] = { status: ing.status, rule_id: ing.rule_id || "RULE_OTHER" }; 
                             }
 
                             if (ing.subIngredients) ing.subIngredients.forEach(applyCache);
@@ -427,7 +438,7 @@ Output: JSON ONLY. No Markdown.
                             for (const item of newToCache) {
                                 const safeId = encodeURIComponent(item.name).replace(/\./g, '%2E');
                                 const docRef = doc(db, 'ingredient_cache', safeId);
-                                await setDoc(docRef, { name: item.name, status: item.status }, { merge: true });
+                                await setDoc(docRef, { name: item.name, status: item.status, rule_id: item.rule_id }, { merge: true });
                             }
                         }
 
@@ -561,19 +572,23 @@ function analyzeIngredients(ingredients, language) {
 
         if (isHaram) {
             ing.status = "HARAM";
+            ing.rule_id = (nameLower.includes('alcohol') || nameLower.includes('ethanol')) ? "RULE_HARAM_ALCOHOL" : "RULE_HARAM_PORK";
             hasHaram = true;
         } else if (isUnknown) {
             if (ing.status !== "HARAM") {
                 ing.status = "DOUBTFUL";
+                ing.rule_id = "RULE_DOUBTFUL_UNSPECIFIED";
                 hasUnknown = true;
             }
         } else if (isSafe) {
             if (ing.status !== "HARAM" && ing.status !== "DOUBTFUL") {
                 ing.status = "HALAL";
+                ing.rule_id = "RULE_HALAL_NATURAL";
             }
         } else {
             if (ing.status === "HARAM") hasHaram = true;
             if (ing.status === "DOUBTFUL") hasUnknown = true;
+            if (!ing.rule_id) ing.rule_id = "RULE_OTHER";
         }
 
         if (ing.subIngredients && Array.isArray(ing.subIngredients)) {

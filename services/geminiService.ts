@@ -6,7 +6,7 @@ import { secureStorage } from "../utils/secureStorage";
 import { resizeImageWorker } from "../utils/imageUtils";
 
 // ⚠️ الرابط المباشر للخادم (للأندرويد)
-const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4.vercel.app'; 
+const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4-r5hd.vercel.app'; 
 
 // MUST MATCH PACKAGE.JSON VERSION
 const APP_VERSION = "2.2.0";
