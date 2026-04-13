@@ -93,7 +93,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       return [];
     }
   });
-  const [user, setUser] = useState<any | null>(null); // Changed User to any
+  const [user, setUser] = useState<any | null>(auth.currentUser); // Changed User to any
   const [isSigningOut, setIsSigningOut] = useState(false); // New state for loading
   const [ingredientLang, setIngredientLang] = useState<'app' | 'original'>(() => {
       const saved = localStorage.getItem('ingredientLangPreference');
@@ -101,10 +101,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   });
 
   useEffect(() => {
-     // 1. Get initial user
-     setUser(auth.currentUser);
-
-     // 2. Listen for auth changes (Login/Logout) to update UI immediately
+     // Listen for auth changes (Login/Logout) to update UI immediately
      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
        setUser(currentUser);
      });
@@ -285,12 +282,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             {user ? (user.email || t.guest) : t.guest}
                          </p>
                          <p className="text-xs text-gray-400 truncate">
-                            {user ? (user.role === 'authenticated' ? t.registeredUser : 'ID: ' + user.id.slice(0,8)) : t.guest}
+                            {user ? (!user.isAnonymous ? t.registeredUser : 'ID: ' + (user.uid || user.id || '').slice(0,8)) : t.guest}
                          </p>
                      </div>
                  </div>
                  
-                 {user && user.role === 'authenticated' ? (
+                 {user && !user.isAnonymous ? (
                      <button 
                         onClick={handleSignOut}
                         disabled={isSigningOut}
@@ -544,7 +541,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* DANGER ZONE - DELETE ACCOUNT (Google Play Requirement) */}
-          {user && user.role === 'authenticated' && (
+          {user && !user.isAnonymous && (
              <div>
                 <h3 className="text-xs font-bold text-red-600 mb-3 px-2 uppercase tracking-widest">{t.dangerZone}</h3>
                 <div className="bg-red-950/20 rounded-2xl overflow-hidden border border-red-900/30 p-4 flex justify-between items-center">
