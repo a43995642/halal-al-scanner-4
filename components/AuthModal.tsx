@@ -93,7 +93,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     try {
       if (isLogin) {
         // --- LOGIN FLOW ---
-        await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        
+        if (!userCredential.user.emailVerified) {
+            // تسجيل الخروج فوراً إذا لم يكن البريد مؤكداً
+            await signOut(auth);
+            setError(t.pleaseCheckInbox || 'Please verify your email before logging in.');
+            return;
+        }
+        
         onSuccess();
         onClose();
       } else {
@@ -102,6 +110,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         
         // إرسال رسالة التحقق
         await sendEmailVerification(userCredential.user);
+        
+        // تسجيل الخروج فوراً حتى لا يتمكن من الدخول قبل التحقق
+        await signOut(auth);
         
         // إظهار رسالة للمستخدم لتأكيد البريد الإلكتروني
         setShowEmailSent(true);
