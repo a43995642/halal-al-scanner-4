@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, sendEmailVerification, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, sendEmailVerification, GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { Capacitor } from '@capacitor/core';
