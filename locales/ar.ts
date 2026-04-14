@@ -310,7 +310,20 @@ const ar: TranslationDictionary = {
   noActiveSubscription: "لم يتم العثور على اشتراكات سابقة.",
   connectingToStore: "جاري الاتصال بالمتجر... يرجى الانتظار",
   pointCameraAt: "وجه الكاميرا نحو <strong class=\"text-white\">قائمة المكونات</strong> الخلفية.",
-  ingredientsMissing: "تم العثور على المنتج ولكن قائمة المكونات مفقودة."
+  ingredientsMissing: "تم العثور على المنتج ولكن قائمة المكونات مفقودة.",
+  adminPanel: "لوحة تحكم المسؤول",
+  pendingReports: "التقارير المعلقة",
+  noPendingReports: "لا توجد تقارير معلقة.",
+  originalText: "النص الأصلي:",
+  aiResult: "نتيجة الذكاء الاصطناعي:",
+  userCorrection: "تصحيح المستخدم:",
+  userNotes: "ملاحظات المستخدم:",
+  approve: "موافقة وتحديث",
+  dismiss: "تجاهل وحذف",
+  reportApproved: "تمت الموافقة على التقرير وتحديث قاعدة البيانات.",
+  reportDismissed: "تم تجاهل التقرير وحذفه.",
+  errorApproving: "حدث خطأ أثناء الموافقة.",
+  errorDismissing: "حدث خطأ أثناء التجاهل."
 };
 
 export default ar;

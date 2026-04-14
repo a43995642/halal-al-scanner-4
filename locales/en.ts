@@ -311,7 +311,20 @@ const en: TranslationDictionary = {
   noActiveSubscription: "No active subscription found.",
   connectingToStore: "Connecting to store...",
   pointCameraAt: "Point camera at the <strong class=\"text-white\">Ingredients List</strong>.",
-  ingredientsMissing: "Product found but ingredients list is missing."
+  ingredientsMissing: "Product found but ingredients list is missing.",
+  adminPanel: "Admin Panel",
+  pendingReports: "Pending Reports",
+  noPendingReports: "No pending reports.",
+  originalText: "Original Text:",
+  aiResult: "AI Result:",
+  userCorrection: "User Correction:",
+  userNotes: "User Notes:",
+  approve: "Approve & Update",
+  dismiss: "Dismiss & Delete",
+  reportApproved: "Report approved and database updated.",
+  reportDismissed: "Report dismissed and deleted.",
+  errorApproving: "Error approving report.",
+  errorDismissing: "Error dismissing report."
 };
 
 export default en;

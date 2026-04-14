@@ -13,6 +13,7 @@ const BarcodeModal = React.lazy(() => import('./components/BarcodeModal').then(m
 const HistoryModal = React.lazy(() => import('./components/HistoryModal').then(m => ({ default: m.HistoryModal })));
 const TextInputModal = React.lazy(() => import('./components/TextInputModal').then(m => ({ default: m.TextInputModal })));
 const ENumbersDictionaryModal = React.lazy(() => import('./components/ENumbersDictionaryModal').then(m => ({ default: m.ENumbersDictionaryModal })));
+const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 
 import { analyzeImage, analyzeText } from './services/geminiService';
 import { fetchProductByBarcode } from './services/openFoodFacts';
@@ -70,6 +71,7 @@ export default function App() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [showENumbersModal, setShowENumbersModal] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   const [showAuthSuccess, setShowAuthSuccess] = useState(false);
 
@@ -188,6 +190,10 @@ export default function App() {
     if (accepted !== 'true') setShowOnboarding(true);
     const savedHistory = localStorage.getItem('halalScannerHistory');
     if (savedHistory) { try { setHistory(JSON.parse(savedHistory)); } catch (e) { /* ignore */ } }
+    
+    const handleOpenAdminPanel = () => setShowAdminPanel(true);
+    window.addEventListener('open-admin-panel', handleOpenAdminPanel);
+    return () => window.removeEventListener('open-admin-panel', handleOpenAdminPanel);
   }, []);
   
   const showToast = (msg: string) => { setToastMessage(msg); setTimeout(() => setToastMessage(null), 3000); };
@@ -531,6 +537,8 @@ export default function App() {
             onOpenPrivacy={() => { setShowSettings(false); setShowPrivacy(true); }}
             onOpenTerms={() => { setShowSettings(false); setShowTerms(true); }}
         />}
+        
+        {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
         
         {showSubscriptionModal && (
             <SubscriptionModal 

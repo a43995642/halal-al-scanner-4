@@ -35,6 +35,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && (request.auth.token.email == "a43995642@gmail.com" || request.auth.token.email_verified == true && request.auth.token.email == "a43995642@gmail.com");
+    }
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -70,9 +74,9 @@ service cloud.firestore {
     match /reports/{reportId} {
       // Anyone can create a report (even anonymous users)
       allow create: if isValidReport();
-      // Only the user who created the report can read/delete it (if they were logged in)
-      allow read, delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
-      allow update: if false; // Reports are immutable
+      // Only the user who created the report can read/delete it (if they were logged in), or an admin
+      allow read, delete: if (isAuthenticated() && resource.data.user_id == request.auth.uid) || isAdmin();
+      allow update: if isAdmin();
     }
 
     match /user_stats/{userId} {
@@ -89,7 +93,7 @@ service cloud.firestore {
       // Anyone can write to the cache (used by the app to store results)
       allow create: if isValidIngredientCache();
       allow update: if isValidIngredientCache();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
   }
 }
