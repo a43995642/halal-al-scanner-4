@@ -17,6 +17,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
   const { t, language } = useLanguage();
   const { showAlert } = useAlert();
   const [selectedStatus, setSelectedStatus] = useState<HalalStatus | null>(null);
+  const [selectedIngredient, setSelectedIngredient] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -35,6 +36,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
         await addDoc(collection(db, 'reports'), {
             user_id: userId === 'anonymous' ? null : userId,
             original_text: analyzedText || result.reason,
+            reported_ingredient: selectedIngredient || null,
             ai_result: result,
             user_correction: selectedStatus,
             user_notes: notes,
@@ -87,6 +89,26 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
         <div className="p-6 space-y-6">
            <p className="text-gray-400 text-sm text-center">{t.reportDesc}</p>
            
+           {result.ingredientsDetected && result.ingredientsDetected.length > 0 && (
+             <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">
+                  {language === 'ar' ? 'المكون الخاطئ (اختياري)' : 'Wrong Ingredient (Optional)'}
+                </label>
+                <select
+                  value={selectedIngredient}
+                  onChange={(e) => setSelectedIngredient(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 outline-none text-sm appearance-none"
+                >
+                  <option value="">{language === 'ar' ? 'النتيجة كاملة خاطئة' : 'The entire result is wrong'}</option>
+                  {result.ingredientsDetected.map((ing, idx) => (
+                    <option key={idx} value={ing.name}>
+                      {ing.name} ({ing.status})
+                    </option>
+                  ))}
+                </select>
+             </div>
+           )}
+
            <div>
               <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">{t.correctStatus}</label>
               <div className="grid grid-cols-2 gap-3">
