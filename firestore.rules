@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: reports
+    // Document ID: auto-generated
+    // Fields:
+    //   - user_id: string (optional) - The ID of the user who submitted the report
+    //   - original_text: string - The original text that was analyzed
+    //   - ai_result: map - The result returned by the AI
+    //   - user_correction: string - The user's suggested correction
+    //   - user_notes: string (optional) - Additional notes from the user
+    //   - created_at: timestamp - The timestamp when the report was created
+    //
+    // Collection: user_stats
+    // Document ID: userId
+    // Fields:
+    //   - scanCount: number - The number of scans the user has performed
+    //
+    // Collection: ingredient_cache
+    // Document ID: ingredientId
+    // Fields:
+    //   - result: map - The cached result
+    //   - timestamp: timestamp - The timestamp when the cache was created
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidReport() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['original_text', 'ai_result', 'user_correction', 'created_at']) &&
+             data.original_text is string && data.original_text.size() <= 10000 &&
+             data.ai_result is map &&
+             data.user_correction is string && data.user_correction.size() <= 100 &&
+             (!('user_notes' in data) || (data.user_notes is string && data.user_notes.size() <= 5000)) &&
+             (!('user_id' in data) || data.user_id == null || (data.user_id is string && data.user_id.size() <= 100)) &&
+             data.created_at is timestamp;
+    }
+
+    function isValidUserStats() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['scanCount']) &&
+             data.scanCount is number && data.scanCount >= 0;
+    }
+
+    function isValidIngredientCache() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['result', 'timestamp']) &&
+             data.result is map &&
+             data.timestamp is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /reports/{reportId} {
+      // Anyone can create a report (even anonymous users)
+      allow create: if isValidReport();
+      // Only the user who created the report can read/delete it (if they were logged in)
+      allow read, delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow update: if false; // Reports are immutable
+    }
+
+    match /user_stats/{userId} {
+      // Users can read, create, and update their own stats
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserStats();
+      allow update: if isOwner(userId) && isValidUserStats();
+      allow delete: if isOwner(userId);
+    }
+
+    match /ingredient_cache/{ingredientId} {
+      // Anyone can read the cache
+      allow read: if true;
+      // Anyone can write to the cache (used by the app to store results)
+      allow create: if isValidIngredientCache();
+      allow update: if isValidIngredientCache();
+      allow delete: if false;
+    }
+  }
+}
