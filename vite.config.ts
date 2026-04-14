@@ -30,12 +30,83 @@ const copyRootAssets = () => {
   };
 };
 
+// Custom plugin to serve Vercel API routes locally
+const vercelApiPlugin = () => {
+  return {
+    name: 'vercel-api-plugin',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (req.url?.startsWith('/api/')) {
+          try {
+            // Parse URL to get the file path
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            let filePath = path.join(__dirname, url.pathname + '.js');
+            
+            if (!fs.existsSync(filePath)) {
+               filePath = path.join(__dirname, url.pathname, 'index.js');
+            }
+
+            if (fs.existsSync(filePath)) {
+              // Dynamically import the API handler
+              const module = await import(/* @vite-ignore */ filePath + '?t=' + Date.now());
+              const handler = module.default;
+              
+              if (handler) {
+                // Parse body for POST requests
+                if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+                  let body = '';
+                  req.on('data', chunk => { body += chunk.toString(); });
+                  req.on('end', async () => {
+                    try {
+                      req.body = body ? JSON.parse(body) : {};
+                    } catch (e) {
+                      req.body = body;
+                    }
+                    
+                    // Mock Vercel response object methods
+                    res.status = (code) => { res.statusCode = code; return res; };
+                    res.json = (data) => {
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(JSON.stringify(data));
+                    };
+                    res.send = (data) => { res.end(data); };
+                    
+                    await handler(req, res);
+                  });
+                } else {
+                  // Mock Vercel response object methods
+                  res.status = (code) => { res.statusCode = code; return res; };
+                  res.json = (data) => {
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify(data));
+                  };
+                  res.send = (data) => { res.end(data); };
+                  
+                  await handler(req, res);
+                }
+                return;
+              }
+            }
+          } catch (error) {
+            console.error('Local API Error:', error);
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: 'Internal Server Error', details: error.message }));
+            return;
+          }
+        }
+        next();
+      });
+    }
+  };
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(() => {
   return {
     plugins: [
       react(),
-      copyRootAssets()
+      copyRootAssets(),
+      vercelApiPlugin()
     ],
     // Ensure relative paths for Android WebView
     base: './',
