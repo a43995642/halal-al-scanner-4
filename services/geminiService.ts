@@ -54,7 +54,12 @@ const fetchWithTimeout = async (resource: RequestInfo, options: RequestInit & { 
   const { timeout = 50000 } = options; // 50 seconds max
   
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+  let isTimeout = false;
+  
+  const id = setTimeout(() => {
+    isTimeout = true;
+    controller.abort();
+  }, timeout);
   
   // If user provided a signal (e.g. from UI cancel), link it
   if (options.signal) {
@@ -71,8 +76,11 @@ const fetchWithTimeout = async (resource: RequestInfo, options: RequestInit & { 
     });
     clearTimeout(id);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(id);
+    if (error.name === 'AbortError' && isTimeout) {
+      throw new Error('Request timed out');
+    }
     throw error;
   }
 };
@@ -193,7 +201,7 @@ export const analyzeImage = async (
                 userMessage = error.message;
              } else if (error.message.includes("NO_INTERNET") || !navigator.onLine) {
                  userMessage = "error_noInternet";
-             } else if (error.name === 'AbortError' || error.message.includes('aborted')) { 
+             } else if (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('timed out')) { 
                  userMessage = "error_timeout";
              } else if (error.message.includes("HTTP Error") || error.message.includes("Server Error")) {
                  userMessage = `error_serverIssue|${error.message}`;
@@ -309,7 +317,7 @@ export const analyzeText = async (
       if (attempt === MAX_RETRIES) {
           let userMessage = `error_unexpected|${error.message}`;
           
-          if (error.name === 'AbortError' || error.message.includes('aborted')) {
+          if (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('timed out')) {
               userMessage = "error_timeout";
           } else if (error.message.includes("Server Error")) {
               userMessage = `error_serverIssue|${error.message}`;
