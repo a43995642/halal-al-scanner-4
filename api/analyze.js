@@ -261,7 +261,7 @@ Output: JSON ONLY. No Markdown.
     }
 
     const modelResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash",
       contents: { parts: parts },
       config: {
         systemInstruction: systemInstruction,
