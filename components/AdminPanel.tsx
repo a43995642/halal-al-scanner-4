@@ -8,6 +8,7 @@ interface Report {
   id: string;
   original_text: string;
   reported_ingredient?: string;
+  reported_ingredients?: string[];
   ai_result: any;
   user_correction: string;
   user_notes?: string;
@@ -55,30 +56,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const handleApprove = async (report: Report) => {
     try {
       // 1. Add to ingredient_cache
-      const ingredientName = (report.reported_ingredient || report.original_text).trim().toLowerCase();
-      const safeId = encodeURIComponent(ingredientName).replace(/\./g, '%2E');
-      
-      let newStatus = "HALAL";
-      if (report.user_correction === "حرام" || report.user_correction === "Haram") newStatus = "HARAM";
-      if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful") newStatus = "DOUBTFUL";
+      const ingredientsToUpdate = report.reported_ingredients?.length 
+          ? report.reported_ingredients 
+          : (report.reported_ingredient ? [report.reported_ingredient] : [report.original_text]);
 
-      const cacheRef = doc(db, 'ingredient_cache', safeId);
-      await setDoc(cacheRef, {
-        name: ingredientName,
-        status: newStatus,
-        rule_id: "RULE_USER_CORRECTED",
-        result: {
+      for (const ing of ingredientsToUpdate) {
+          const ingredientName = ing.trim().toLowerCase();
+          const safeId = encodeURIComponent(ingredientName).replace(/\./g, '%2E');
+          
+          let newStatus = "HALAL";
+          if (report.user_correction === "حرام" || report.user_correction === "Haram") newStatus = "HARAM";
+          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful") newStatus = "DOUBTFUL";
+
+          const cacheRef = doc(db, 'ingredient_cache', safeId);
+          await setDoc(cacheRef, {
+            name: ingredientName,
             status: newStatus,
-            reason: "User corrected via report",
-            ingredientsDetected: [{
-                name: ingredientName,
+            rule_id: "RULE_USER_CORRECTED",
+            result: {
                 status: newStatus,
-                rule_id: "RULE_USER_CORRECTED"
-            }],
-            confidence: 100
-        },
-        timestamp: serverTimestamp()
-      }, { merge: true });
+                reason: "User corrected via report",
+                ingredientsDetected: [{
+                    name: ingredientName,
+                    status: newStatus,
+                    rule_id: "RULE_USER_CORRECTED"
+                }],
+                confidence: 100
+            },
+            timestamp: serverTimestamp()
+          }, { merge: true });
+      }
 
       // 2. Delete the report
       await deleteDoc(doc(db, 'reports', report.id));
@@ -160,14 +167,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       </div>
                     </div>
                     
-                    {/* Reported Ingredient */}
-                    {report.reported_ingredient && (
+                    {/* Reported Ingredients */}
+                    {(report.reported_ingredients?.length ? report.reported_ingredients.length > 0 : report.reported_ingredient) && (
                       <div>
                         <span className="text-xs text-blue-400/70 uppercase tracking-widest font-bold">
-                          {language === 'ar' ? 'المكون المبلغ عنه' : 'Reported Ingredient'}
+                          {language === 'ar' ? 'المكونات المبلغ عنها' : 'Reported Ingredients'}
                         </span>
-                        <div className="bg-blue-900/20 border border-blue-900/50 p-3 rounded-xl mt-2">
-                          <p className="text-blue-400 font-bold text-lg">{report.reported_ingredient}</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {(report.reported_ingredients || (report.reported_ingredient ? [report.reported_ingredient] : [])).map((ing, idx) => (
+                            <div key={idx} className="bg-blue-900/20 border border-blue-900/50 px-3 py-1.5 rounded-lg">
+                              <p className="text-blue-400 font-bold text-sm">{ing}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

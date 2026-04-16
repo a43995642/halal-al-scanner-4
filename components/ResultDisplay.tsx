@@ -189,7 +189,18 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({
                           </button>
                       </div>
                   </div>
-                  <p className="text-white text-base leading-relaxed font-medium whitespace-pre-wrap">{formatReason(result.reason)}</p>
+                  {result.status === 'HALAL' ? (
+                      <div className="flex items-center gap-3 bg-emerald-500/10 text-emerald-400 p-4 rounded-xl border border-emerald-500/20 mt-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 flex-shrink-0">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="font-bold text-sm">
+                              {document.documentElement.dir === 'rtl' ? 'خالٍ من المكونات المحرمة أو المشتبه بها' : 'Free of forbidden or doubtful ingredients'}
+                          </span>
+                      </div>
+                  ) : (
+                      <p className="text-white text-base leading-relaxed font-medium whitespace-pre-wrap">{formatReason(result.reason)}</p>
+                  )}
               </div>
               
               {result.warnings && result.warnings.length > 0 && (

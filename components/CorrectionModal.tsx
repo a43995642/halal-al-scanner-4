@@ -17,7 +17,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
   const { t, language } = useLanguage();
   const { showAlert } = useAlert();
   const [selectedStatus, setSelectedStatus] = useState<HalalStatus | null>(null);
-  const [selectedIngredient, setSelectedIngredient] = useState<string>('');
+  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -36,7 +36,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
         await addDoc(collection(db, 'reports'), {
             user_id: userId === 'anonymous' ? null : userId,
             original_text: analyzedText || result.reason,
-            reported_ingredient: selectedIngredient || null,
+            reported_ingredients: selectedIngredients.length > 0 ? selectedIngredients : null,
             ai_result: result,
             user_correction: selectedStatus,
             user_notes: notes,
@@ -92,23 +92,38 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
            {result.ingredientsDetected && result.ingredientsDetected.length > 0 && (
              <div>
                 <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">
-                  {language === 'ar' ? 'المكون الخاطئ (اختياري)' : 'Wrong Ingredient (Optional)'}
+                  {language === 'ar' ? 'المكونات الخاطئة (اختياري)' : 'Wrong Ingredients (Optional)'}
                 </label>
-                <select
-                  value={selectedIngredient}
-                  onChange={(e) => setSelectedIngredient(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 outline-none text-sm appearance-none"
-                >
-                  <option value="">{language === 'ar' ? 'النتيجة كاملة خاطئة' : 'The entire result is wrong'}</option>
-                  {result.ingredientsDetected.map((ing, idx) => {
-                    const statusText = ing.status === 'HALAL' ? t.statusHalal : ing.status === 'HARAM' ? t.statusHaram : ing.status === 'DOUBTFUL' ? t.statusDoubtful : t.statusNonFood;
-                    return (
-                      <option key={idx} value={ing.name}>
-                        {ing.name} ({statusText})
-                      </option>
-                    );
-                  })}
-                </select>
+                <div className="max-h-40 overflow-y-auto bg-black/50 border border-white/10 rounded-xl p-2 space-y-1 custom-scrollbar">
+                   <button
+                     onClick={() => setSelectedIngredients([])}
+                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedIngredients.length === 0 ? 'bg-blue-500/20 text-blue-400 font-bold' : 'text-gray-400 hover:bg-white/5'}`}
+                   >
+                     {language === 'ar' ? 'النتيجة كاملة خاطئة' : 'The entire result is wrong'}
+                   </button>
+                   {result.ingredientsDetected.map((ing, idx) => {
+                     const isSelected = selectedIngredients.includes(ing.name);
+                     const statusText = ing.status === 'HALAL' ? t.statusHalal : ing.status === 'HARAM' ? t.statusHaram : ing.status === 'DOUBTFUL' ? t.statusDoubtful : t.statusNonFood;
+                     return (
+                       <button
+                         key={idx}
+                         onClick={() => {
+                           if (isSelected) setSelectedIngredients(prev => prev.filter(i => i !== ing.name));
+                           else setSelectedIngredients(prev => [...prev, ing.name]);
+                         }}
+                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${isSelected ? 'bg-blue-500/20 text-blue-400 font-bold' : 'text-gray-300 hover:bg-white/5'}`}
+                       >
+                         <div className="flex items-center gap-2">
+                           <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
+                             {isSelected && <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                           </div>
+                           <span>{ing.name}</span>
+                         </div>
+                         <span className="text-xs opacity-70">({statusText})</span>
+                       </button>
+                     );
+                   })}
+                </div>
              </div>
            )}
 
