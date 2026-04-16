@@ -260,48 +260,68 @@ Output: JSON ONLY. No Markdown.
          return response.status(400).json({ error: 'No content provided' });
     }
 
-    const modelResponse = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: { parts: parts },
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-             type: Type.OBJECT,
-             properties: {
-               status: { type: Type.STRING },
-               reason: { type: Type.STRING },
-               ingredientsDetected: { 
-                 type: Type.ARRAY, 
-                 items: { 
-                    type: Type.OBJECT, 
-                    properties: { 
-                        name: {type: Type.STRING}, 
-                        status: {type: Type.STRING},
-                        rule_id: {type: Type.STRING},
-                        subIngredients: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    name: {type: Type.STRING},
-                                    status: {type: Type.STRING},
-                                    rule_id: {type: Type.STRING}
+    let modelResponse;
+    let retries = 3;
+    let delay = 1000; // Start with 1 second delay
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            modelResponse = await ai.models.generateContent({
+              // Using gemini-2.5-flash as it is more stable and less prone to rate limits than preview models
+              model: "gemini-2.5-flash",
+              contents: { parts: parts },
+              config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: {
+                     type: Type.OBJECT,
+                     properties: {
+                       status: { type: Type.STRING },
+                       reason: { type: Type.STRING },
+                       ingredientsDetected: { 
+                         type: Type.ARRAY, 
+                         items: { 
+                            type: Type.OBJECT, 
+                            properties: { 
+                                name: {type: Type.STRING}, 
+                                status: {type: Type.STRING},
+                                rule_id: {type: Type.STRING},
+                                subIngredients: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            name: {type: Type.STRING},
+                                            status: {type: Type.STRING},
+                                            rule_id: {type: Type.STRING}
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                 } 
-               },
-               confidence: { type: Type.INTEGER },
-               warnings: {
-                 type: Type.ARRAY,
-                 items: { type: Type.STRING }
-               }
-             }
+                         } 
+                       },
+                       confidence: { type: Type.INTEGER },
+                       warnings: {
+                         type: Type.ARRAY,
+                         items: { type: Type.STRING }
+                       }
+                     }
+                }
+              },
+            });
+            break; // Success, exit loop
+        } catch (err) {
+            const isRetryable = err.message?.includes('429') || err.status === 429 || err.code === 429 || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('503') || err.status === 503 || err.code === 503 || err.message?.includes('500') || err.status === 500 || err.code === 500;
+            
+            if (isRetryable && i < retries - 1) {
+                console.warn(`Gemini API busy, retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2; // Exponential backoff
+            } else {
+                throw err; // Re-throw if not retryable or out of retries
+            }
         }
-      },
-    });
+    }
 
     if (!modelResponse || !modelResponse.text) {
         throw new Error("Empty response from AI");
