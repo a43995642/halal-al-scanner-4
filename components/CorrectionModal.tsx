@@ -17,12 +17,12 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
   const { t, language } = useLanguage();
   const { showAlert } = useAlert();
   const [selectedStatus, setSelectedStatus] = useState<HalalStatus | null>(null);
-  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+  const [ingredientCorrections, setIngredientCorrections] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   const handleSubmit = async () => {
-    if (!selectedStatus) return;
+    if (!selectedStatus && Object.keys(ingredientCorrections).length === 0) return;
     
     setIsSending(true);
     
@@ -36,7 +36,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
         await addDoc(collection(db, 'reports'), {
             user_id: userId === 'anonymous' ? null : userId,
             original_text: analyzedText || result.reason,
-            reported_ingredients: selectedIngredients.length > 0 ? selectedIngredients : null,
+            ingredient_corrections: Object.keys(ingredientCorrections).length > 0 ? ingredientCorrections : null,
             ai_result: result,
             user_correction: selectedStatus,
             user_notes: notes,
@@ -92,35 +92,37 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
            {result.ingredientsDetected && result.ingredientsDetected.length > 0 && (
              <div>
                 <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">
-                  {language === 'ar' ? 'المكونات الخاطئة (اختياري)' : 'Wrong Ingredients (Optional)'}
+                  {language === 'ar' ? 'تصحيح المكونات (اختياري)' : 'Correct Ingredients (Optional)'}
                 </label>
-                <div className="max-h-40 overflow-y-auto bg-black/50 border border-white/10 rounded-xl p-2 space-y-1 custom-scrollbar">
-                   <button
-                     onClick={() => setSelectedIngredients([])}
-                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${selectedIngredients.length === 0 ? 'bg-blue-500/20 text-blue-400 font-bold' : 'text-gray-400 hover:bg-white/5'}`}
-                   >
-                     {language === 'ar' ? 'النتيجة كاملة خاطئة' : 'The entire result is wrong'}
-                   </button>
+                <div className="max-h-48 overflow-y-auto bg-black/50 border border-white/10 rounded-xl p-2 space-y-2 custom-scrollbar">
                    {result.ingredientsDetected.map((ing, idx) => {
-                     const isSelected = selectedIngredients.includes(ing.name);
-                     const statusText = ing.status === 'HALAL' ? t.statusHalal : ing.status === 'HARAM' ? t.statusHaram : ing.status === 'DOUBTFUL' ? t.statusDoubtful : t.statusNonFood;
+                     const currentStatusText = ing.status === 'HALAL' ? t.statusHalal : ing.status === 'HARAM' ? t.statusHaram : ing.status === 'DOUBTFUL' ? t.statusDoubtful : t.statusNonFood;
                      return (
-                       <button
-                         key={idx}
-                         onClick={() => {
-                           if (isSelected) setSelectedIngredients(prev => prev.filter(i => i !== ing.name));
-                           else setSelectedIngredients(prev => [...prev, ing.name]);
-                         }}
-                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${isSelected ? 'bg-blue-500/20 text-blue-400 font-bold' : 'text-gray-300 hover:bg-white/5'}`}
-                       >
-                         <div className="flex items-center gap-2">
-                           <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-500'}`}>
-                             {isSelected && <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                           </div>
-                           <span>{ing.name}</span>
+                       <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-white/5 rounded-lg border border-white/5">
+                         <div className="flex flex-col">
+                           <span className="text-sm font-medium text-gray-200">{ing.name}</span>
+                           <span className="text-xs text-gray-500">{language === 'ar' ? 'الحالة الحالية:' : 'Current:'} {currentStatusText}</span>
                          </div>
-                         <span className="text-xs opacity-70">({statusText})</span>
-                       </button>
+                         <select
+                           value={ingredientCorrections[ing.name] || ""}
+                           onChange={(e) => {
+                             const val = e.target.value;
+                             setIngredientCorrections(prev => {
+                               const next = { ...prev };
+                               if (val) next[ing.name] = val;
+                               else delete next[ing.name];
+                               return next;
+                             });
+                           }}
+                           className="bg-black border border-white/10 rounded-lg p-2 text-sm text-white focus:border-blue-500 outline-none"
+                         >
+                           <option value="">{language === 'ar' ? 'تحديد التصحيح...' : 'Select correction...'}</option>
+                           <option value="HALAL">{t.statusHalal}</option>
+                           <option value="HARAM">{t.statusHaram}</option>
+                           <option value="DOUBTFUL">{t.statusDoubtful}</option>
+                           <option value="NON_FOOD">{t.statusNonFood}</option>
+                         </select>
+                       </div>
                      );
                    })}
                 </div>
@@ -128,7 +130,9 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
            )}
 
            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">{t.correctStatus}</label>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase px-1">
+                {language === 'ar' ? 'حالة المنتج ككل (اختياري إذا تم تصحيح مكونات)' : 'Overall Product Status (Optional if ingredients corrected)'}
+              </label>
               <div className="grid grid-cols-2 gap-3">
                  {statusOptions.map((opt) => (
                     <button
@@ -163,7 +167,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
 
            <button 
              onClick={handleSubmit}
-             disabled={!selectedStatus || isSending}
+             disabled={(!selectedStatus && Object.keys(ingredientCorrections).length === 0) || isSending}
              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition shadow-lg shadow-blue-900/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
            >
              {isSending ? (

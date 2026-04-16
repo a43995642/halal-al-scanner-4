@@ -9,6 +9,7 @@ interface Report {
   original_text: string;
   reported_ingredient?: string;
   reported_ingredients?: string[];
+  ingredient_corrections?: Record<string, string>;
   ai_result: any;
   user_correction: string;
   user_notes?: string;
@@ -56,29 +57,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const handleApprove = async (report: Report) => {
     try {
       // 1. Add to ingredient_cache
-      const ingredientsToUpdate = report.reported_ingredients?.length 
-          ? report.reported_ingredients 
-          : (report.reported_ingredient ? [report.reported_ingredient] : [report.original_text]);
+      const updates: { name: string, status: string }[] = [];
 
-      for (const ing of ingredientsToUpdate) {
-          const ingredientName = ing.trim().toLowerCase();
+      if (report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0) {
+          for (const [ingName, status] of Object.entries(report.ingredient_corrections)) {
+              updates.push({ name: ingName, status });
+          }
+      } else if (report.reported_ingredients && report.reported_ingredients.length > 0) {
+          let newStatus = "HALAL";
+          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+          for (const ingName of report.reported_ingredients) {
+              updates.push({ name: ingName, status: newStatus });
+          }
+      } else if (report.reported_ingredient) {
+          let newStatus = "HALAL";
+          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+          updates.push({ name: report.reported_ingredient, status: newStatus });
+      } else if (report.user_correction) {
+          let newStatus = "HALAL";
+          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+          updates.push({ name: report.original_text, status: newStatus });
+      }
+
+      for (const update of updates) {
+          const ingredientName = update.name.trim().toLowerCase();
           const safeId = encodeURIComponent(ingredientName).replace(/\./g, '%2E');
           
-          let newStatus = "HALAL";
-          if (report.user_correction === "حرام" || report.user_correction === "Haram") newStatus = "HARAM";
-          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful") newStatus = "DOUBTFUL";
-
           const cacheRef = doc(db, 'ingredient_cache', safeId);
           await setDoc(cacheRef, {
             name: ingredientName,
-            status: newStatus,
+            status: update.status,
             rule_id: "RULE_USER_CORRECTED",
             result: {
-                status: newStatus,
+                status: update.status,
                 reason: "User corrected via report",
                 ingredientsDetected: [{
                     name: ingredientName,
-                    status: newStatus,
+                    status: update.status,
                     rule_id: "RULE_USER_CORRECTED"
                 }],
                 confidence: 100
@@ -167,8 +185,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       </div>
                     </div>
                     
-                    {/* Reported Ingredients */}
-                    {(report.reported_ingredients?.length ? report.reported_ingredients.length > 0 : report.reported_ingredient) && (
+                    {/* Ingredient Corrections */}
+                    {report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0 ? (
+                      <div>
+                        <span className="text-xs text-blue-400/70 uppercase tracking-widest font-bold">
+                          {language === 'ar' ? 'تصحيحات المكونات' : 'Ingredient Corrections'}
+                        </span>
+                        <div className="flex flex-col gap-2 mt-2">
+                          {Object.entries(report.ingredient_corrections).map(([ing, status], idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-blue-900/20 border border-blue-900/50 px-3 py-2 rounded-lg">
+                              <span className="text-blue-100 text-sm font-medium">{ing}</span>
+                              <span className={`font-bold text-xs px-2 py-1 rounded ${status === 'HALAL' ? 'bg-emerald-500/20 text-emerald-400' : status === 'HARAM' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                {status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (report.reported_ingredients?.length ? report.reported_ingredients.length > 0 : report.reported_ingredient) ? (
                       <div>
                         <span className="text-xs text-blue-400/70 uppercase tracking-widest font-bold">
                           {language === 'ar' ? 'المكونات المبلغ عنها' : 'Reported Ingredients'}
@@ -181,7 +215,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                           ))}
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                     {/* AI Result & User Correction */}
                     <div className="grid grid-cols-2 gap-4">
