@@ -25,6 +25,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const { showAlert } = useAlert();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adminEdits, setAdminEdits] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     fetchReports();
@@ -45,6 +46,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
         return timeB - timeA;
       });
+
+      const initialEdits: Record<string, Record<string, string>> = {};
+      fetchedReports.forEach(report => {
+          initialEdits[report.id] = {};
+          if (report.ai_result?.ingredientsDetected) {
+              report.ai_result.ingredientsDetected.forEach((ing: any) => {
+                  initialEdits[report.id][ing.name] = ing.status;
+              });
+          }
+          if (report.ingredient_corrections) {
+              Object.entries(report.ingredient_corrections).forEach(([name, status]) => {
+                  initialEdits[report.id][name] = status;
+              });
+          }
+      });
+      setAdminEdits(initialEdits);
       setReports(fetchedReports);
     } catch (error) {
       console.error("Error fetching reports:", error);
@@ -57,29 +74,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const handleApprove = async (report: Report) => {
     try {
       // 1. Add to ingredient_cache
+      const edits = adminEdits[report.id] || {};
       const updates: { name: string, status: string }[] = [];
 
-      if (report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0) {
-          for (const [ingName, status] of Object.entries(report.ingredient_corrections)) {
+      if (Object.keys(edits).length > 0) {
+          for (const [ingName, status] of Object.entries(edits)) {
               updates.push({ name: ingName, status });
           }
-      } else if (report.reported_ingredients && report.reported_ingredients.length > 0) {
-          let newStatus = "HALAL";
-          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
-          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
-          for (const ingName of report.reported_ingredients) {
-              updates.push({ name: ingName, status: newStatus });
+      } else {
+          // Fallback for older reports
+          if (report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0) {
+              for (const [ingName, status] of Object.entries(report.ingredient_corrections)) {
+                  updates.push({ name: ingName, status });
+              }
+          } else if (report.reported_ingredients && report.reported_ingredients.length > 0) {
+              let newStatus = "HALAL";
+              if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+              if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+              for (const ingName of report.reported_ingredients) {
+                  updates.push({ name: ingName, status: newStatus });
+              }
+          } else if (report.reported_ingredient) {
+              let newStatus = "HALAL";
+              if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+              if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+              updates.push({ name: report.reported_ingredient, status: newStatus });
+          } else if (report.user_correction) {
+              let newStatus = "HALAL";
+              if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
+              if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
+              updates.push({ name: report.original_text, status: newStatus });
           }
-      } else if (report.reported_ingredient) {
-          let newStatus = "HALAL";
-          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
-          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
-          updates.push({ name: report.reported_ingredient, status: newStatus });
-      } else if (report.user_correction) {
-          let newStatus = "HALAL";
-          if (report.user_correction === "حرام" || report.user_correction === "Haram" || report.user_correction === "HARAM") newStatus = "HARAM";
-          if (report.user_correction === "مشتبه به" || report.user_correction === "Doubtful" || report.user_correction === "DOUBTFUL") newStatus = "DOUBTFUL";
-          updates.push({ name: report.original_text, status: newStatus });
       }
 
       for (const update of updates) {
@@ -185,8 +210,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       </div>
                     </div>
                     
-                    {/* Ingredient Corrections */}
-                    {report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0 ? (
+                    {/* Ingredients Review */}
+                    {report.ai_result?.ingredientsDetected && report.ai_result.ingredientsDetected.length > 0 ? (
+                      <div>
+                        <span className="text-xs text-blue-400/70 uppercase tracking-widest font-bold">
+                          {language === 'ar' ? 'مراجعة المكونات' : 'Review Ingredients'}
+                        </span>
+                        <div className="flex flex-col gap-2 mt-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                          {report.ai_result.ingredientsDetected.map((ing: any, idx: number) => {
+                            const currentEdit = adminEdits[report.id]?.[ing.name] || ing.status;
+                            const isUserCorrected = report.ingredient_corrections && report.ingredient_corrections[ing.name];
+                            
+                            return (
+                              <div key={idx} className={`flex justify-between items-center p-2 rounded-lg border ${isUserCorrected ? 'bg-blue-900/20 border-blue-500/50' : 'bg-gray-800/50 border-gray-700/50'}`}>
+                                <div className="flex flex-col">
+                                  <span className="text-gray-200 text-sm font-medium">{ing.name}</span>
+                                  {isUserCorrected && (
+                                    <span className="text-xs text-blue-400">{language === 'ar' ? 'اقتراح المستخدم:' : 'User suggested:'} {isUserCorrected}</span>
+                                  )}
+                                </div>
+                                <select
+                                  value={currentEdit}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setAdminEdits(prev => ({
+                                      ...prev,
+                                      [report.id]: {
+                                        ...(prev[report.id] || {}),
+                                        [ing.name]: val
+                                      }
+                                    }));
+                                  }}
+                                  className={`text-xs font-bold px-2 py-1 rounded outline-none border-none ${
+                                    currentEdit === 'HALAL' ? 'bg-emerald-500/20 text-emerald-400' :
+                                    currentEdit === 'HARAM' ? 'bg-red-500/20 text-red-400' :
+                                    currentEdit === 'DOUBTFUL' ? 'bg-amber-500/20 text-amber-400' :
+                                    'bg-gray-500/20 text-gray-400'
+                                  }`}
+                                >
+                                  <option value="HALAL">HALAL</option>
+                                  <option value="HARAM">HARAM</option>
+                                  <option value="DOUBTFUL">DOUBTFUL</option>
+                                  <option value="NON_FOOD">NON_FOOD</option>
+                                </select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : report.ingredient_corrections && Object.keys(report.ingredient_corrections).length > 0 ? (
                       <div>
                         <span className="text-xs text-blue-400/70 uppercase tracking-widest font-bold">
                           {language === 'ar' ? 'تصحيحات المكونات' : 'Ingredient Corrections'}
