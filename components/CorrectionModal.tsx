@@ -100,11 +100,14 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({ onClose, resul
                   className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 outline-none text-sm appearance-none"
                 >
                   <option value="">{language === 'ar' ? 'النتيجة كاملة خاطئة' : 'The entire result is wrong'}</option>
-                  {result.ingredientsDetected.map((ing, idx) => (
-                    <option key={idx} value={ing.name}>
-                      {ing.name} ({ing.status})
-                    </option>
-                  ))}
+                  {result.ingredientsDetected.map((ing, idx) => {
+                    const statusText = ing.status === 'HALAL' ? t.statusHalal : ing.status === 'HARAM' ? t.statusHaram : ing.status === 'DOUBTFUL' ? t.statusDoubtful : t.statusNonFood;
+                    return (
+                      <option key={idx} value={ing.name}>
+                        {ing.name} ({statusText})
+                      </option>
+                    );
+                  })}
                 </select>
              </div>
            )}
