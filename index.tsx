@@ -1,10 +1,12 @@
 
-import React, { Component, ReactNode, ErrorInfo } from 'react';
+import React, { Component, ReactNode, ErrorInfo, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { AlertProvider } from './contexts/AlertContext';
+
+const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 
 interface ErrorBoundaryProps {
   children?: ReactNode;
@@ -55,6 +57,39 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+function RootApp() {
+  const [isAdminRoute, setIsAdminRoute] = useState(window.location.pathname === '/admin');
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setIsAdminRoute(window.location.pathname === '/admin');
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    
+    // Custom event to handle routing from components without full reload
+    window.addEventListener('navigate', handleLocationChange);
+
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('navigate', handleLocationChange);
+    };
+  }, []);
+
+  if (isAdminRoute) {
+    return (
+      <React.Suspense fallback={<div className="bg-slate-950 min-h-screen flex items-center justify-center"><div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+         <AdminPanel onClose={() => { 
+             window.history.pushState({}, '', '/'); 
+             window.dispatchEvent(new Event('navigate')); 
+         }} />
+      </React.Suspense>
+    );
+  }
+
+  return <App />;
+}
+
 const rootElement = document.getElementById('root');
 if (rootElement) {
   const root = createRoot(rootElement);
@@ -63,7 +98,7 @@ if (rootElement) {
       <ErrorBoundary>
         <LanguageProvider>
           <AlertProvider>
-            <App />
+            <RootApp />
           </AlertProvider>
         </LanguageProvider>
       </ErrorBoundary>

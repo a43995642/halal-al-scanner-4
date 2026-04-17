@@ -539,7 +539,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <button onClick={() => {
                   onClose();
-                  window.dispatchEvent(new CustomEvent('open-admin-panel'));
+                  window.history.pushState({}, '', '/admin');
+                  window.dispatchEvent(new Event('navigate'));
                 }} className="w-full flex items-center justify-between p-4 border-t border-white/5 hover:bg-white/5 transition">
                     <span className="text-sm font-medium text-emerald-400">{language === 'ar' ? 'تسجيل دخول الموظفين' : 'Staff Login'}</span>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 text-emerald-500 ${language === 'ar' ? 'rotate-180' : ''}`}>
