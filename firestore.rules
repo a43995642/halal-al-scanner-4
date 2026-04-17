@@ -36,7 +36,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && (request.auth.token.email == "a43995642@gmail.com" || request.auth.token.email_verified == true && request.auth.token.email == "a43995642@gmail.com");
+      return isAuthenticated() && (
+         request.auth.token.email == "a43995642@gmail.com" || 
+         exists(/databases/$(database)/documents/admin_roles/$(request.auth.uid))
+      );
     }
 
     function isOwner(userId) {
@@ -80,11 +83,22 @@ service cloud.firestore {
     }
 
     match /user_stats/{userId} {
-      // Users can read, create, and update their own stats
-      allow read: if isOwner(userId);
+      // Users can read, create, and update their own stats, Admins can read all stats for the dashboard
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUserStats();
       allow update: if isOwner(userId) && isValidUserStats();
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /admin_roles/{uid} {
+      // Users can check their own role, admins can manage
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /app_settings/{document=**} {
+      // Only admins can read/write global settings like rules
+      allow read, write: if isAdmin();
     }
 
     match /ingredient_cache/{ingredientId} {

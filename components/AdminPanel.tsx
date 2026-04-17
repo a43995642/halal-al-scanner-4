@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp, getDoc, getCountFromServer, where } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAlert } from '../contexts/AlertContext';
 
@@ -34,21 +35,97 @@ const defaultUnknownList = 'flavor, vanilla extract, glycerin, emulsifier, stabi
 const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const { t, language } = useLanguage();
   const { showAlert } = useAlert();
+  
+  // Auth State
+  const [loginState, setLoginState] = useState<'checking' | 'login' | 'unauthorized' | 'loggedIn'>('checking');
+  const [adminRole, setAdminRole] = useState<'superadmin' | 'reviewer' | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // Dashboard Stats
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [premiumUsers, setPremiumUsers] = useState(0);
+
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminEdits, setAdminEdits] = useState<Record<string, Record<string, string>>>({});
   
   // Tabs & Rules State
-  const [activeTab, setActiveTab] = useState<'reports' | 'rules'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'rules' | 'dashboard'>('reports');
   const [rulesText, setRulesText] = useState(defaultRules);
   const [haramListText, setHaramListText] = useState(defaultHaramList);
   const [unknownListText, setUnknownListText] = useState(defaultUnknownList);
   const [savingRules, setSavingRules] = useState(false);
 
   useEffect(() => {
-    fetchReports();
-    fetchRules();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            try {
+                const roleDoc = await getDoc(doc(db, 'admin_roles', user.uid));
+                if (roleDoc.exists()) {
+                    setAdminRole(roleDoc.data().role);
+                    setLoginState('loggedIn');
+                    if (roleDoc.data().role === 'superadmin') {
+                        setActiveTab('dashboard');
+                    }
+                } else if (user.email === 'a43995642@gmail.com') {
+                    // Bootstrap Main Admin
+                    await setDoc(doc(db, 'admin_roles', user.uid), { role: 'superadmin' });
+                    setAdminRole('superadmin');
+                    setLoginState('loggedIn');
+                    setActiveTab('dashboard');
+                } else {
+                    setLoginState('unauthorized');
+                }
+            } catch(e) {
+                setLoginState('unauthorized');
+            }
+        } else {
+            setLoginState('login');
+            setAdminRole(null);
+        }
+    });
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (loginState === 'loggedIn') {
+        fetchReports();
+        fetchRules();
+        if (adminRole === 'superadmin') {
+            fetchStats();
+        }
+    }
+  }, [loginState, adminRole]);
+
+  const fetchStats = async () => {
+      try {
+         const usersSnap = await getCountFromServer(collection(db, 'user_stats'));
+         setTotalUsers(usersSnap.data().count);
+         
+         const premiumQuery = query(collection(db, 'user_stats'), where('is_premium', '==', true));
+         const premiumSnap = await getCountFromServer(premiumQuery);
+         setPremiumUsers(premiumSnap.data().count);
+      } catch (e) {
+         console.error("Fetch stats error", e);
+      }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setAuthError('');
+      try {
+          await signInWithEmailAndPassword(auth, email, password);
+      } catch(err: any) {
+          setAuthError(err.message || 'Login failed');
+      }
+  };
+
+  const handleLogout = async () => {
+      await signOut(auth);
+      onClose(); // Close panel since user signed out of the app
+  };
 
   const fetchRules = async () => {
     try {
@@ -205,6 +282,94 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     }
   };
 
+  if (loginState === 'checking') {
+      return (
+          <div className="fixed inset-0 z-[100] bg-gray-900 flex items-center justify-center">
+              <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+      );
+  }
+
+  if (loginState === 'login' || loginState === 'unauthorized') {
+      return (
+          <div className="fixed inset-0 z-[100] bg-gray-900 flex items-center justify-center p-4">
+              <button 
+                  onClick={onClose} 
+                  className="absolute top-6 right-6 p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
+              >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+              </button>
+
+              <div className="bg-gray-800 p-8 rounded-3xl max-w-sm w-full border border-gray-700 shadow-2xl">
+                  <div className="flex justify-center mb-6 text-emerald-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                      </svg>
+                  </div>
+                  
+                  <h2 className="text-2xl font-bold text-center text-white mb-6">
+                      {language === 'ar' ? 'وصول الموظفين' : 'Staff Access'}
+                  </h2>
+
+                  {loginState === 'unauthorized' && (
+                      <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-4 text-sm text-center">
+                          {language === 'ar' ? 'عذراً، هذا الحساب لا يملك صلاحيات موظف.' : 'Sorry, this account lacks staff permissions.'}
+                      </div>
+                  )}
+
+                  {authError && (
+                      <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-4 text-sm text-center">
+                          {authError === 'Firebase: Error (auth/invalid-credential).' 
+                              ? (language === 'ar' ? 'البيانات غير صحيحة' : 'Invalid credentials') 
+                              : authError}
+                      </div>
+                  )}
+
+                 <form onSubmit={handleLogin} className="space-y-4">
+                     <div>
+                         <input 
+                            type="email" 
+                            placeholder="Email" 
+                            value={email} 
+                            onChange={e=>setEmail(e.target.value)} 
+                            className="w-full bg-gray-900 border border-gray-700 p-4 rounded-xl text-white outline-none focus:border-emerald-500 transition" 
+                            required 
+                         />
+                     </div>
+                     <div>
+                         <input 
+                            type="password" 
+                            placeholder="Password" 
+                            value={password} 
+                            onChange={e=>setPassword(e.target.value)} 
+                            className="w-full bg-gray-900 border border-gray-700 p-4 rounded-xl text-white outline-none focus:border-emerald-500 transition" 
+                            required 
+                         />
+                     </div>
+                     <button 
+                        type="submit" 
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 p-4 rounded-xl text-white font-bold transition shadow-lg shadow-emerald-500/20"
+                     >
+                         {language === 'ar' ? 'تسجيل الدخول' : 'Sign In'}
+                     </button>
+                     
+                     {loginState === 'unauthorized' && (
+                        <button 
+                           type="button" 
+                           onClick={() => signOut(auth)} 
+                           className="w-full p-4 mt-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-xl transition"
+                        >
+                            {language === 'ar' ? 'تسجيل الخروج من الحساب الحالي' : 'Sign out current user'}
+                        </button>
+                     )}
+                 </form>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div className="fixed inset-0 z-[100] bg-gray-900 flex flex-col overflow-hidden">
       
@@ -222,19 +387,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
               <p className="text-gray-400 text-sm mt-1">{t.pendingReports}</p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors font-medium border border-gray-700"
-          >
-            <span>{language === 'ar' ? 'العودة للتطبيق' : 'Back to App'}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 text-red-400 hover:text-red-300 hover:bg-gray-800 rounded-xl transition-colors font-medium border border-gray-700"
+            >
+              <span>{language === 'ar' ? 'تسجيل الخروج' : 'Logout Staff'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+            </button>
+            <button 
+              onClick={onClose}
+              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors font-medium border border-gray-700"
+            >
+              <span>{language === 'ar' ? 'العودة للتطبيق' : 'Back to App'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         
         {/* Tabs */}
         <div className="flex px-6 space-x-4 space-x-reverse mt-2">
+          {adminRole === 'superadmin' && (
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+                  activeTab === 'dashboard' 
+                    ? 'border-emerald-500 text-emerald-400' 
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                }`}
+              >
+                {language === 'ar' ? 'لوحة القيادة' : 'Dashboard'}
+              </button>
+          )}
           <button
             onClick={() => setActiveTab('reports')}
             className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
@@ -261,7 +449,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 lg:p-8 w-full">
         <div className="max-w-7xl mx-auto space-y-6">
-          {activeTab === 'rules' ? (
+          {activeTab === 'dashboard' && adminRole === 'superadmin' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Total Users */}
+                  <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex items-center gap-4">
+                      <div className="p-4 bg-blue-500/20 rounded-xl text-blue-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                          </svg>
+                      </div>
+                      <div>
+                          <p className="text-gray-400 text-sm font-medium">{language === 'ar' ? 'إجمالي المستخدمين' : 'Total App Users'}</p>
+                          <p className="text-3xl font-bold text-white mt-1">{totalUsers}</p>
+                      </div>
+                  </div>
+
+                  {/* Premium Users */}
+                  <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex items-center gap-4">
+                      <div className="p-4 bg-amber-500/20 rounded-xl text-amber-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                             <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                          </svg>
+                      </div>
+                      <div>
+                          <p className="text-gray-400 text-sm font-medium">{language === 'ar' ? 'إجمالي المشتركين' : 'Premium Subscribers'}</p>
+                          <p className="text-3xl font-bold text-white mt-1">{premiumUsers}</p>
+                      </div>
+                  </div>
+
+                  {/* Estimated Revenue */}
+                  <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex items-center gap-4">
+                      <div className="p-4 bg-emerald-500/20 rounded-xl text-emerald-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                      </div>
+                      <div>
+                          <p className="text-gray-400 text-sm font-medium">{language === 'ar' ? 'إجمالي تكلفة الاشتراكات' : 'Est. Revenue'}</p>
+                          <p className="text-3xl font-bold text-white mt-1">~${(premiumUsers * 4.99).toFixed(2)}</p>
+                      </div>
+                  </div>
+              </div>
+          ) : activeTab === 'rules' ? (
              <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex flex-col gap-6">
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">{language === 'ar' ? 'قواعد تحليل المكونات (للذكاء الاصطناعي)' : 'Analysis Rules (for AI)'}</h3>

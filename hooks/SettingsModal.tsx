@@ -533,23 +533,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                     </svg>
                 </button>
-                {user && user.email === 'a43995642@gmail.com' && (
-                  <button onClick={() => {
-                    onClose();
-                    // We need to trigger the admin panel. We can dispatch a custom event or pass a prop.
-                    // Let's use a custom event for simplicity since we don't want to drill props too much.
-                    window.dispatchEvent(new CustomEvent('open-admin-panel'));
-                  }} className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition">
-                      <span className="text-sm font-medium text-emerald-400">{t.adminPanel}</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 text-emerald-500 ${language === 'ar' ? 'rotate-180' : ''}`}>
-                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                      </svg>
-                  </button>
-                )}
                 <div className="p-4 flex items-center justify-between">
                    <span className="text-sm font-medium text-white">{t.appVersion}</span>
                    <span className="text-xs text-gray-400 font-mono">{packageJson.version}</span>
                 </div>
+                <button onClick={() => {
+                  onClose();
+                  window.dispatchEvent(new CustomEvent('open-admin-panel'));
+                }} className="w-full flex items-center justify-between p-4 border-t border-white/5 hover:bg-white/5 transition">
+                    <span className="text-sm font-medium text-emerald-400">{language === 'ar' ? 'تسجيل دخول الموظفين' : 'Staff Login'}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 text-emerald-500 ${language === 'ar' ? 'rotate-180' : ''}`}>
+                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
+                </button>
             </div>
           </div>
 
