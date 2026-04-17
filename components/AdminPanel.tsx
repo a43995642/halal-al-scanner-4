@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp, getDoc, getCountFromServer, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword as createUserAuth, getAuth } from 'firebase/auth';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import firebaseConfig from '../firebase-applet-config.json';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAlert } from '../contexts/AlertContext';
 
@@ -47,12 +49,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [totalUsers, setTotalUsers] = useState(0);
   const [premiumUsers, setPremiumUsers] = useState(0);
 
+  // Staff Management Form
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPassword, setNewStaffPassword] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'superadmin' | 'reviewer'>('reviewer');
+  const [creatingStaff, setCreatingStaff] = useState(false);
+  const [existingStaff, setExistingStaff] = useState<any[]>([]);
+
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminEdits, setAdminEdits] = useState<Record<string, Record<string, string>>>({});
   
   // Tabs & Rules State
-  const [activeTab, setActiveTab] = useState<'reports' | 'rules' | 'dashboard'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'rules' | 'dashboard' | 'staff'>('reports');
   const [rulesText, setRulesText] = useState(defaultRules);
   const [haramListText, setHaramListText] = useState(defaultHaramList);
   const [unknownListText, setUnknownListText] = useState(defaultUnknownList);
@@ -95,6 +104,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         fetchRules();
         if (adminRole === 'superadmin') {
             fetchStats();
+            fetchStaff();
         }
     }
   }, [loginState, adminRole]);
@@ -109,6 +119,71 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
          setPremiumUsers(premiumSnap.data().count);
       } catch (e) {
          console.error("Fetch stats error", e);
+      }
+  };
+
+  const fetchStaff = async () => {
+      try {
+          const q = query(collection(db, 'admin_roles'));
+          const querySnapshot = await getDocs(q);
+          const staff: any[] = [];
+          querySnapshot.forEach((doc) => {
+              staff.push({ id: doc.id, ...doc.data() });
+          });
+          setExistingStaff(staff);
+      } catch (e) {
+          console.error("Fetch staff error", e);
+      }
+  };
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newStaffEmail || !newStaffPassword || newStaffPassword.length < 6) {
+          showAlert(language === 'ar' ? 'يرجى إدخال بريد صالح وكلمة مرور (6 أحرف على الأقل).' : 'Please enter a valid email and password (min 6 chars).', 'error');
+          return;
+      }
+      setCreatingStaff(true);
+      try {
+          const secondaryAppName = 'SecondaryStaffCreator';
+          let secondaryApp;
+          if (getApps().find(app => app.name === secondaryAppName)) {
+              secondaryApp = getApp(secondaryAppName);
+          } else {
+              secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+          }
+          const secondaryAuth = getAuth(secondaryApp);
+          
+          const userCredential = await createUserAuth(secondaryAuth, newStaffEmail, newStaffPassword);
+          const newUid = userCredential.user.uid;
+          
+          await setDoc(doc(db, 'admin_roles', newUid), {
+              role: newStaffRole,
+              email: newStaffEmail,
+              created_at: serverTimestamp()
+          });
+          
+          await signOut(secondaryAuth);
+          
+          showAlert(language === 'ar' ? 'تمت إضافة الموظف بنجاح' : 'Staff added successfully', 'success');
+          setNewStaffEmail('');
+          setNewStaffPassword('');
+          fetchStaff();
+      } catch (error: any) {
+          console.error("Error creating staff:", error);
+          showAlert(error.message || 'Error creating staff', 'error');
+      } finally {
+          setCreatingStaff(false);
+      }
+  };
+
+  const handleRemoveStaffRole = async (uid: string) => {
+      try {
+          await deleteDoc(doc(db, 'admin_roles', uid));
+          showAlert(language === 'ar' ? 'تمت إزالة صلاحيات الموظف' : 'Staff role removed', 'success');
+          fetchStaff();
+      } catch (error) {
+          console.error("Error removing staff role:", error);
+          showAlert('Error removing staff role', 'error');
       }
   };
 
@@ -412,16 +487,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         {/* Tabs */}
         <div className="flex px-6 space-x-4 space-x-reverse mt-2">
           {adminRole === 'superadmin' && (
-              <button
-                onClick={() => setActiveTab('dashboard')}
-                className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
-                  activeTab === 'dashboard' 
-                    ? 'border-emerald-500 text-emerald-400' 
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
-                }`}
-              >
-                {language === 'ar' ? 'لوحة القيادة' : 'Dashboard'}
-              </button>
+              <>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+                      activeTab === 'dashboard' 
+                        ? 'border-emerald-500 text-emerald-400' 
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                    }`}
+                  >
+                    {language === 'ar' ? 'لوحة القيادة' : 'Dashboard'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('staff')}
+                    className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+                      activeTab === 'staff' 
+                        ? 'border-emerald-500 text-emerald-400' 
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                    }`}
+                  >
+                    {language === 'ar' ? 'إدارة الموظفين' : 'Manage Staff'}
+                  </button>
+              </>
           )}
           <button
             onClick={() => setActiveTab('reports')}
@@ -490,6 +577,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                       </div>
                   </div>
               </div>
+          ) : activeTab === 'staff' && adminRole === 'superadmin' ? (
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg">
+                   <h3 className="text-xl font-bold text-white mb-4">{language === 'ar' ? 'إضافة موظف جديد' : 'Add New Staff'}</h3>
+                   <form onSubmit={handleCreateStaff} className="space-y-4">
+                       <div>
+                           <label className="text-gray-400 text-sm mb-1 block">{language === 'ar' ? 'البريد الإلكتروني' : 'Email'}</label>
+                           <input type="email" value={newStaffEmail} onChange={e=>setNewStaffEmail(e.target.value)} required className="w-full bg-gray-900 border border-gray-700 p-3 rounded-xl text-white outline-none focus:border-emerald-500" />
+                       </div>
+                       <div>
+                           <label className="text-gray-400 text-sm mb-1 block">{language === 'ar' ? 'كلمة المرور' : 'Password'}</label>
+                           <input type="password" value={newStaffPassword} onChange={e=>setNewStaffPassword(e.target.value)} minLength={6} required className="w-full bg-gray-900 border border-gray-700 p-3 rounded-xl text-white outline-none focus:border-emerald-500" />
+                       </div>
+                       <div>
+                           <label className="text-gray-400 text-sm mb-1 block">{language === 'ar' ? 'الصلاحيات' : 'Role'}</label>
+                           <select value={newStaffRole} onChange={e=>setNewStaffRole(e.target.value as any)} className="w-full bg-gray-900 border border-gray-700 p-3 rounded-xl text-white outline-none focus:border-emerald-500">
+                               <option value="reviewer">{language === 'ar' ? 'مراجع (تقارير فقط)' : 'Reviewer (Reports Only)'}</option>
+                               <option value="superadmin">{language === 'ar' ? 'مشرف عام' : 'Super Admin'}</option>
+                           </select>
+                       </div>
+                       <button type="submit" disabled={creatingStaff} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition">
+                           {creatingStaff ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'إضافة موظف'}
+                       </button>
+                   </form>
+                </div>
+                <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg">
+                   <h3 className="text-xl font-bold text-white mb-4">{language === 'ar' ? 'قائمة الموظفين' : 'Staff List'}</h3>
+                   <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                       {existingStaff.map(staff => (
+                           <div key={staff.id} className="flex justify-between items-center bg-gray-900 border border-gray-700 p-3 rounded-xl">
+                               <div>
+                                   <p className="text-white font-bold">{staff.email || staff.id}</p>
+                                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${staff.role === 'superadmin' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                       {staff.role === 'superadmin' ? 'Super Admin' : 'Reviewer'}
+                                   </span>
+                               </div>
+                               {staff.email !== 'a43995642@gmail.com' && (
+                                   <button onClick={() => handleRemoveStaffRole(staff.id)} className="text-red-400 hover:text-red-300 p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition" title="Remove Access">
+                                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                   </button>
+                               )}
+                           </div>
+                       ))}
+                   </div>
+                </div>
+             </div>
           ) : activeTab === 'rules' ? (
              <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex flex-col gap-6">
                 <div>
