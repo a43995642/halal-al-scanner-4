@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAlert } from '../contexts/AlertContext';
@@ -20,16 +20,69 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
+const defaultRules = `   - HALAL: Known permissible sources like Sugar, Tomatoes, Honey, Vegetables, Fruits, Grains, Natural Spices. ALL types of fish and marine animals (e.g., Anchovy, Tuna, Salmon, Sardine) are HALAL and do not require slaughtering.
+   - DOUBTFUL: Ingredients with unspecified sources like Natural Flavor, Flavoring, Enzymes, Emulsifiers, Extracts (unspecified), Gelatin (unspecified), E471, Whey/Rennet (unspecified), Glycerin (unspecified). If an ingredient is a mixture of known HALAL and unspecified sources, classify it as DOUBTFUL, NOT HARAM.
+   - HARAM: Clearly prohibited ingredients like Pork, Lard, Bacon, Alcohol/Ethanol, Wine, Beer, Rum, Gelatin (from pork), Carmine/E120, Shellac, L-Cysteine (human/hair).
+   - IMPORTANT: Marine animals and fish like Anchovy are HALAL and do NOT require slaughtering. Never classify them as HARAM or DOUBTFUL based on slaughtering.
+   - IMPORTANT: Do NOT classify any product as HARAM unless there is a clear, explicit HARAM ingredient.
+   - IMPORTANT - MEAT & POULTRY: Any meat or poultry ingredient (e.g., Beef, Chicken, Lamb, Meat Extract, Chicken Broth, Animal Fat) MUST be classified as DOUBTFUL unless the packaging explicitly states it is "Halal Certified" or "Zabiha". Do not assume meat is Halal or Haram without explicit certification or source information.
+   - RULE TAGGING: You MUST assign a specific "rule_id" to EVERY ingredient based on why it received its status. Choose from: "RULE_HALAL_NATURAL", "RULE_HALAL_MARINE", "RULE_HARAM_PORK", "RULE_HARAM_ALCOHOL", "RULE_HARAM_INSECTS", "RULE_DOUBTFUL_UNSPECIFIED", "RULE_DOUBTFUL_MEAT", "RULE_OTHER".`;
+
+const defaultHaramList = 'alcohol, ethanol, pork, gelatin';
+const defaultUnknownList = 'flavor, vanilla extract, glycerin, emulsifier, stabilizer, enzyme';
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const { t, language } = useLanguage();
   const { showAlert } = useAlert();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminEdits, setAdminEdits] = useState<Record<string, Record<string, string>>>({});
+  
+  // Tabs & Rules State
+  const [activeTab, setActiveTab] = useState<'reports' | 'rules'>('reports');
+  const [rulesText, setRulesText] = useState(defaultRules);
+  const [haramListText, setHaramListText] = useState(defaultHaramList);
+  const [unknownListText, setUnknownListText] = useState(defaultUnknownList);
+  const [savingRules, setSavingRules] = useState(false);
 
   useEffect(() => {
     fetchReports();
+    fetchRules();
   }, []);
+
+  const fetchRules = async () => {
+    try {
+      const docRef = doc(db, 'app_settings', 'analysis_rules');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.prompt_rules) setRulesText(data.prompt_rules);
+        if (data.haram_list) setHaramListText(data.haram_list);
+        if (data.unknown_list) setUnknownListText(data.unknown_list);
+      }
+    } catch (error) {
+      console.error("Error fetching rules:", error);
+    }
+  };
+
+  const saveRules = async () => {
+    try {
+      setSavingRules(true);
+      const docRef = doc(db, 'app_settings', 'analysis_rules');
+      await setDoc(docRef, {
+        prompt_rules: rulesText,
+        haram_list: haramListText,
+        unknown_list: unknownListText,
+        updated_at: serverTimestamp()
+      }, { merge: true });
+      showAlert(language === 'ar' ? 'تم حفظ القواعد بنجاح' : 'Rules saved successfully', 'success');
+    } catch (error) {
+      console.error("Error saving rules:", error);
+      showAlert(language === 'ar' ? 'فشل حفظ القواعد' : 'Failed to save rules', 'error');
+    } finally {
+      setSavingRules(false);
+    }
+  };
 
   const fetchReports = async () => {
     try {
@@ -156,33 +209,121 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     <div className="fixed inset-0 z-[100] bg-gray-900 flex flex-col overflow-hidden">
       
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b border-gray-800 bg-gray-950 shadow-md">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/20 rounded-xl text-emerald-400">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+      <div className="flex flex-col border-b border-gray-800 bg-gray-950 shadow-md">
+        <div className="flex items-center justify-between p-6 pb-2">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-emerald-500/20 rounded-xl text-emerald-400">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">{t.adminPanel}</h2>
+              <p className="text-gray-400 text-sm mt-1">{t.pendingReports}</p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors font-medium border border-gray-700"
+          >
+            <span>{language === 'ar' ? 'العودة للتطبيق' : 'Back to App'}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
-          </div>
-          <div>
-            <h2 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">{t.adminPanel}</h2>
-            <p className="text-gray-400 text-sm mt-1">{t.pendingReports}</p>
-          </div>
+          </button>
         </div>
-        <button 
-          onClick={onClose}
-          className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-xl transition-colors font-medium border border-gray-700"
-        >
-          <span>{language === 'ar' ? 'العودة للتطبيق' : 'Back to App'}</span>
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        
+        {/* Tabs */}
+        <div className="flex px-6 space-x-4 space-x-reverse mt-2">
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+              activeTab === 'reports' 
+                ? 'border-emerald-500 text-emerald-400' 
+                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+            }`}
+          >
+            {language === 'ar' ? 'تقارير المستخدمين' : 'User Reports'}
+          </button>
+          <button
+             onClick={() => setActiveTab('rules')}
+             className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+               activeTab === 'rules' 
+                 ? 'border-emerald-500 text-emerald-400' 
+                 : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+             }`}
+           >
+             {language === 'ar' ? 'القواعد الشرعية' : 'Islamic Rules'}
+           </button>
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 lg:p-8 w-full">
         <div className="max-w-7xl mx-auto space-y-6">
-          {loading ? (
+          {activeTab === 'rules' ? (
+             <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex flex-col gap-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2">{language === 'ar' ? 'قواعد تحليل المكونات (للذكاء الاصطناعي)' : 'Analysis Rules (for AI)'}</h3>
+                  <p className="text-gray-400 text-sm mb-4">
+                    {language === 'ar' 
+                      ? 'هذه هي التعليمات التي يتم إرسالها لنموذج الذكاء الاصطناعي ليقوم بتصنيف المكونات بناءً عليها. يمكنك تعديلها لتوجيه التحليل بشكل أدق.'
+                      : 'These instructions are sent to the AI model to classify ingredients. You can edit them to fine-tune the analysis.'}
+                  </p>
+                  <textarea 
+                    value={rulesText}
+                    onChange={(e) => setRulesText(e.target.value)}
+                    dir="ltr"
+                    className="w-full h-64 bg-gray-900 border border-gray-700 rounded-xl p-4 text-emerald-300 font-mono text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all custom-scrollbar"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div>
+                     <h3 className="text-lg font-bold text-white mb-2">{language === 'ar' ? 'كلمات مفتاحية لمكونات محرمة' : 'Haram Keywords'}</h3>
+                     <p className="text-gray-400 text-sm mb-4">
+                        {language === 'ar' ? 'كلمات مفتاحية مفصولة بفاصلة. سيتم تصنيف أي مكون يحتوي عليها كـ "حرام" مباشرةً.' : 'Comma-separated keywords. Ingredients matching these will immediately be marked HARAM.'}
+                     </p>
+                     <textarea 
+                        value={haramListText}
+                        onChange={(e) => setHaramListText(e.target.value)}
+                        dir="ltr"
+                        className="w-full h-32 bg-gray-900 border border-gray-700 rounded-xl p-4 text-red-300 font-mono text-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all custom-scrollbar"
+                      />
+                   </div>
+                   
+                   <div>
+                     <h3 className="text-lg font-bold text-white mb-2">{language === 'ar' ? 'كلمات مفتاحية لمكونات مشتبه بها' : 'Doubtful Keywords'}</h3>
+                     <p className="text-gray-400 text-sm mb-4">
+                        {language === 'ar' ? 'كلمات مفتاحية مفصولة بفاصلة. سيتم تصنيف أي مكون يحتوي عليها كـ "مشتبه به".' : 'Comma-separated keywords. Ingredients matching these will be marked DOUBTFUL.'}
+                     </p>
+                     <textarea 
+                        value={unknownListText}
+                        onChange={(e) => setUnknownListText(e.target.value)}
+                        dir="ltr"
+                        className="w-full h-32 bg-gray-900 border border-gray-700 rounded-xl p-4 text-amber-300 font-mono text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all custom-scrollbar"
+                      />
+                   </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-700 flex justify-end">
+                   <button
+                     onClick={saveRules}
+                     disabled={savingRules}
+                     className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-3 rounded-xl transition-all shadow-lg font-bold"
+                   >
+                     {savingRules ? (
+                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                     ) : (
+                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                       </svg>
+                     )}
+                     {language === 'ar' ? 'حفظ القواعد' : 'Save Rules'}
+                   </button>
+                </div>
+             </div>
+          ) : loading ? (
             <div className="flex justify-center items-center h-64">
               <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
             </div>

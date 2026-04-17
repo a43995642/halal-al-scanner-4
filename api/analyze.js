@@ -167,6 +167,31 @@ If ANY ingredient violates these preferences (e.g., contains dairy for Dairy All
    - IMPORTANT - MEAT & POULTRY: Any meat or poultry ingredient (e.g., Beef, Chicken, Lamb, Meat Extract, Chicken Broth, Animal Fat) MUST be classified as DOUBTFUL unless the packaging explicitly states it is "Halal Certified" or "Zabiha". Do not assume meat is Halal or Haram without explicit certification or source information.
    - RULE TAGGING: You MUST assign a specific "rule_id" to EVERY ingredient based on why it received its status. Choose from: "RULE_HALAL_NATURAL", "RULE_HALAL_MARINE", "RULE_HARAM_PORK", "RULE_HARAM_ALCOHOL", "RULE_HARAM_INSECTS", "RULE_DOUBTFUL_UNSPECIFIED", "RULE_DOUBTFUL_MEAT", "RULE_OTHER".`;
 
+    let customHaramList = [];
+    let customUnknownList = [];
+
+    // Fetch Custom Rules from Admin Settings
+    if (db) {
+        try {
+            const rulesDocRef = doc(db, 'app_settings', 'analysis_rules');
+            const rulesSnap = await getDoc(rulesDocRef);
+            if (rulesSnap.exists()) {
+                const rulesData = rulesSnap.data();
+                if (rulesData.prompt_rules && rulesData.prompt_rules.trim() !== '') {
+                    rules = '\n' + rulesData.prompt_rules;
+                }
+                if (rulesData.haram_list && rulesData.haram_list.trim() !== '') {
+                    customHaramList = rulesData.haram_list.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                }
+                if (rulesData.unknown_list && rulesData.unknown_list.trim() !== '') {
+                    customUnknownList = rulesData.unknown_list.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load custom rules:", e);
+        }
+    }
+
     const systemInstruction = `
 You are an expert Islamic ${productContext} (OCR & Analysis).
 
@@ -382,7 +407,7 @@ Output: JSON ONLY. No Markdown.
 
         // --- NEW SMART CLASSIFICATION SYSTEM INTEGRATION ---
         if (result && result.ingredientsDetected && Array.isArray(result.ingredientsDetected)) {
-            const smartResult = analyzeIngredients(result.ingredientsDetected, language);
+            const smartResult = analyzeIngredients(result.ingredientsDetected, language, customHaramList, customUnknownList);
             
             const severity = { "HALAL": 0, "DOUBTFUL": 1, "HARAM": 2 };
             
@@ -547,13 +572,20 @@ Output: JSON ONLY. No Markdown.
 }
 
 // --- SMART INGREDIENT CLASSIFICATION SYSTEM ---
-function analyzeIngredients(ingredients, language) {
+function analyzeIngredients(ingredients, language, customHaramList = [], customUnknownList = []) {
     let hasHaram = false;
     let hasUnknown = false;
 
-    const haramList = ['alcohol', 'ethanol', 'pork', 'gelatin'];
-    const unknownList = ['flavor', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
+    let haramList = ['alcohol', 'ethanol', 'pork', 'gelatin'];
+    let unknownList = ['flavor', 'vanilla extract', 'glycerin', 'emulsifier', 'stabilizer', 'enzyme'];
     const safeList = ['water', 'sugar', 'salt', 'corn starch', 'vanilla powder'];
+    
+    if (customHaramList && customHaramList.length > 0) {
+        haramList = customHaramList;
+    }
+    if (customUnknownList && customUnknownList.length > 0) {
+        unknownList = customUnknownList;
+    }
 
     const checkIng = (ing) => {
         if (!ing || !ing.name) return;
