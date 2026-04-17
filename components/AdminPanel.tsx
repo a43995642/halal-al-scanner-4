@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, deleteDoc, setDoc, serverTimestamp, getDoc, getCountFromServer, where } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, setDoc, updateDoc, serverTimestamp, getDoc, getCountFromServer, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword as createUserAuth, getAuth } from 'firebase/auth';
 import { initializeApp, getApp, getApps } from 'firebase/app';
@@ -56,12 +56,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [existingStaff, setExistingStaff] = useState<any[]>([]);
 
+  // Corrections Audit
+  const [corrections, setCorrections] = useState<any[]>([]);
+  const [loadingCorrections, setLoadingCorrections] = useState(false);
+  const [filterEmail, setFilterEmail] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminEdits, setAdminEdits] = useState<Record<string, Record<string, string>>>({});
   
   // Tabs & Rules State
-  const [activeTab, setActiveTab] = useState<'reports' | 'rules' | 'dashboard' | 'staff'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'rules' | 'dashboard' | 'staff' | 'corrections'>('reports');
   const [rulesText, setRulesText] = useState(defaultRules);
   const [haramListText, setHaramListText] = useState(defaultHaramList);
   const [unknownListText, setUnknownListText] = useState(defaultUnknownList);
@@ -73,14 +80,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
             try {
                 const roleDoc = await getDoc(doc(db, 'admin_roles', user.uid));
                 if (roleDoc.exists()) {
-                    setAdminRole(roleDoc.data().role);
+                    const data = roleDoc.data();
+                    if (data.status === 'suspended' && user.email !== 'a43995642@gmail.com') {
+                        await signOut(auth);
+                        setLoginState('unauthorized');
+                        setAuthError(language === 'ar' ? 'تم إيقاف حسابك من قبل الإدارة.' : 'Your account has been suspended by administration.');
+                        return;
+                    }
+                    setAdminRole(data.role);
                     setLoginState('loggedIn');
-                    if (roleDoc.data().role === 'superadmin') {
+                    if (data.role === 'superadmin') {
                         setActiveTab('dashboard');
                     }
                 } else if (user.email === 'a43995642@gmail.com') {
                     // Bootstrap Main Admin
-                    await setDoc(doc(db, 'admin_roles', user.uid), { role: 'superadmin' });
+                    await setDoc(doc(db, 'admin_roles', user.uid), { role: 'superadmin', status: 'active' });
                     setAdminRole('superadmin');
                     setLoginState('loggedIn');
                     setActiveTab('dashboard');
@@ -96,7 +110,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         }
     });
     return () => unsubscribe();
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     if (loginState === 'loggedIn') {
@@ -108,6 +122,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         }
     }
   }, [loginState, adminRole]);
+
+  useEffect(() => {
+      if (activeTab === 'corrections' && adminRole === 'superadmin') {
+          fetchCorrections();
+      }
+  }, [activeTab]);
+
+  const fetchCorrections = async () => {
+       setLoadingCorrections(true);
+       try {
+           const q = query(collection(db, 'ingredient_cache'), where('rule_id', '==', 'RULE_USER_CORRECTED'));
+           const snap = await getDocs(q);
+           const data: any[] = [];
+           snap.forEach(d => data.push({ id: d.id, ...d.data() }));
+           data.sort((a,b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0));
+           setCorrections(data);
+       } catch (e) {
+           console.error(e);
+           showAlert("Error fetching corrections", "error");
+       } finally {
+           setLoadingCorrections(false);
+       }
+  };
+
+  const handleRevertCorrection = async (id: string) => {
+      try {
+          await deleteDoc(doc(db, 'ingredient_cache', id));
+          setCorrections(prev => prev.filter(c => c.id !== id));
+          showAlert(language === 'ar' ? 'تم إلغاء التقييم بنجاح' : 'Evaluation reverted successfully', 'success');
+      } catch (e) {
+          console.error(e);
+          showAlert(language === 'ar' ? 'حدث خطأ أثناء الإلغاء' : 'Error reverting evaluation', 'error');
+      }
+  };
+
+  const handleBulkRevert = async (filteredIds: string[]) => {
+      if (!window.confirm(language === 'ar' ? `هل أنت متأكد من إلغاء ${filteredIds.length} تقييم؟` : `Are you sure you want to revert ${filteredIds.length} evaluations?`)) return;
+      try {
+          // Process sequentially to avoid rate limits or use Promise.all in batches if large.
+          for (const id of filteredIds) {
+              await deleteDoc(doc(db, 'ingredient_cache', id));
+          }
+          setCorrections(prev => prev.filter(c => !filteredIds.includes(c.id)));
+          showAlert(language === 'ar' ? 'تم إلغاء التقييمات بنجاح' : 'Evaluations reverted successfully', 'success');
+      } catch (e) {
+          console.error(e);
+          showAlert(language === 'ar' ? 'حدث خطأ أثناء الإلغاء' : 'Error reverting evaluations', 'error');
+      }
+  };
 
   const fetchStats = async () => {
       try {
@@ -159,6 +222,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           await setDoc(doc(db, 'admin_roles', newUid), {
               role: newStaffRole,
               email: newStaffEmail,
+              status: 'active',
               created_at: serverTimestamp()
           });
           
@@ -173,6 +237,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
           showAlert(error.message || 'Error creating staff', 'error');
       } finally {
           setCreatingStaff(false);
+      }
+  };
+
+  const handleToggleStaffStatus = async (uid: string, currentStatus: string) => {
+      try {
+          const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
+          await updateDoc(doc(db, 'admin_roles', uid), { status: newStatus });
+          showAlert(language === 'ar' ? `تم ${newStatus === 'active' ? 'تفعيل' : 'إيقاف'} الموظف` : `Staff ${newStatus}`, 'success');
+          fetchStaff();
+      } catch (error) {
+          console.error("Error updating status:", error);
+          showAlert(language === 'ar' ? 'فشل تحديث حالة الموظف' : 'Error updating staff status', 'error');
       }
   };
 
@@ -281,6 +357,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       // 1. Add to ingredient_cache
       const edits = adminEdits[report.id] || {};
       const updates: { name: string, status: string }[] = [];
+      const currentUserEmail = auth.currentUser?.email || 'unknown';
+      const currentUserUid = auth.currentUser?.uid || 'unknown';
 
       if (Object.keys(edits).length > 0) {
           for (const [ingName, status] of Object.entries(edits)) {
@@ -331,7 +409,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                 }],
                 confidence: 100
             },
-            timestamp: serverTimestamp()
+            timestamp: serverTimestamp(),
+            approved_by: currentUserUid,
+            approved_by_email: currentUserEmail
           }, { merge: true });
       }
 
@@ -508,6 +588,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   >
                     {language === 'ar' ? 'إدارة الموظفين' : 'Manage Staff'}
                   </button>
+                  <button
+                    onClick={() => setActiveTab('corrections')}
+                    className={`pb-3 px-2 border-b-2 font-bold text-sm transition-colors ${
+                      activeTab === 'corrections' 
+                        ? 'border-emerald-500 text-emerald-400' 
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                    }`}
+                  >
+                    {language === 'ar' ? 'مراجعات الموظفين' : 'Staff Edits'}
+                  </button>
               </>
           )}
           <button
@@ -606,22 +696,152 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                    <h3 className="text-xl font-bold text-white mb-4">{language === 'ar' ? 'قائمة الموظفين' : 'Staff List'}</h3>
                    <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                        {existingStaff.map(staff => (
-                           <div key={staff.id} className="flex justify-between items-center bg-gray-900 border border-gray-700 p-3 rounded-xl">
+                           <div key={staff.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-gray-900 border border-gray-700 p-3 rounded-xl gap-3">
                                <div>
                                    <p className="text-white font-bold">{staff.email || staff.id}</p>
-                                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${staff.role === 'superadmin' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                                       {staff.role === 'superadmin' ? 'Super Admin' : 'Reviewer'}
-                                   </span>
+                                   <div className="flex items-center gap-2 mt-1">
+                                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${staff.role === 'superadmin' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                           {staff.role === 'superadmin' ? 'Super Admin' : 'Reviewer'}
+                                       </span>
+                                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${staff.status === 'suspended' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                           {staff.status === 'suspended' ? (language === 'ar' ? 'موقوف' : 'Suspended') : (language === 'ar' ? 'نشط' : 'Active')}
+                                       </span>
+                                   </div>
                                </div>
                                {staff.email !== 'a43995642@gmail.com' && (
-                                   <button onClick={() => handleRemoveStaffRole(staff.id)} className="text-red-400 hover:text-red-300 p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition" title="Remove Access">
-                                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
-                                   </button>
+                                   <div className="flex items-center gap-2">
+                                       <button 
+                                           onClick={() => handleToggleStaffStatus(staff.id, staff.status || 'active')}
+                                           className="text-xs font-bold px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition"
+                                       >
+                                           {staff.status === 'suspended' ? (language === 'ar' ? 'تفعيل' : 'Activate') : (language === 'ar' ? 'إيقاف' : 'Suspend')}
+                                       </button>
+                                       <button onClick={() => {
+                                            if(window.confirm(language === 'ar' ? 'هل أنت متأكد من حذف حساب هذا الموظف؟' : 'Are you sure you want to delete this staff member?')) {
+                                                handleRemoveStaffRole(staff.id);
+                                            }
+                                       }} className="text-red-400 hover:text-white p-1.5 bg-red-500/10 hover:bg-red-500 rounded-lg transition" title="Delete Staff">
+                                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                       </button>
+                                   </div>
                                )}
                            </div>
                        ))}
                    </div>
                 </div>
+             </div>
+          ) : activeTab === 'corrections' && adminRole === 'superadmin' ? (
+             <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex flex-col gap-6">
+                 <div>
+                     <h3 className="text-xl font-bold text-white mb-2">{language === 'ar' ? 'سجل تقييمات الموظفين' : 'Staff Evaluation History'}</h3>
+                     <p className="text-gray-400 text-sm mb-4">
+                        {language === 'ar' ? 'يمكنك هنا مراجعة جميع المكونات التي تم تقييمها واعتمادها من قبل الموظفين وتصفيتها حسب البريد الإلكتروني أو التاريخ وإلغاءها إذا لزم الأمر.' : 'Review, filter and revert ingredients evaluated by staff.'}
+                     </p>
+                 </div>
+
+                 {/* Filters */}
+                 <div className="flex flex-col md:flex-row gap-4 bg-gray-900 p-4 rounded-xl border border-gray-700">
+                     <div className="flex-1">
+                         <label className="text-gray-400 text-xs mb-1 block font-bold">{language === 'ar' ? 'البحث ببريد الموظف' : 'Search by Email'}</label>
+                         <input type="text" value={filterEmail} onChange={e=>setFilterEmail(e.target.value)} placeholder="employee@example.com" className="w-full bg-gray-800 border border-gray-600 p-2.5 rounded-lg text-white outline-none focus:border-emerald-500 text-sm" />
+                     </div>
+                     <div className="flex-1">
+                         <label className="text-gray-400 text-xs mb-1 block font-bold">{language === 'ar' ? 'من تاريخ' : 'Start Date'}</label>
+                         <input type="date" value={filterStartDate} onChange={e=>setFilterStartDate(e.target.value)} className="w-full bg-gray-800 border border-gray-600 p-2.5 rounded-lg text-white outline-none focus:border-emerald-500 text-sm" />
+                     </div>
+                     <div className="flex-1">
+                         <label className="text-gray-400 text-xs mb-1 block font-bold">{language === 'ar' ? 'إلى تاريخ' : 'End Date'}</label>
+                         <input type="date" value={filterEndDate} onChange={e=>setFilterEndDate(e.target.value)} className="w-full bg-gray-800 border border-gray-600 p-2.5 rounded-lg text-white outline-none focus:border-emerald-500 text-sm" />
+                     </div>
+                 </div>
+
+                 {/* List & Bulk Action */}
+                 <div className="flex flex-col h-[500px]">
+                     {loadingCorrections ? (
+                         <div className="flex-1 flex justify-center items-center">
+                             <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                         </div>
+                     ) : (
+                         <>
+                             {(() => {
+                                 const filteredCorrections = corrections.filter(c => {
+                                     let matchesEmail = true;
+                                     let matchesDates = true;
+                                     if (filterEmail) matchesEmail = c.approved_by_email?.toLowerCase().includes(filterEmail.toLowerCase());
+                                     if (filterStartDate || filterEndDate) {
+                                         if (!c.timestamp) return false;
+                                         const tsMS = c.timestamp.seconds * 1000;
+                                         if (filterStartDate) {
+                                             const s = new Date(filterStartDate).getTime();
+                                             if (tsMS < s) matchesDates = false;
+                                         }
+                                         if (filterEndDate) {
+                                             const e = new Date(filterEndDate).getTime() + 86400000; // End of the day
+                                             if (tsMS >= e) matchesDates = false;
+                                         }
+                                     }
+                                     return matchesEmail && matchesDates;
+                                 });
+
+                                 return (
+                                     <>
+                                         <div className="flex justify-between items-center mb-3">
+                                             <span className="text-gray-400 text-sm font-bold bg-gray-900 px-3 py-1 rounded-lg border border-gray-700">
+                                                 {language === 'ar' ? `العدد: ${filteredCorrections.length}` : `Count: ${filteredCorrections.length}`}
+                                             </span>
+                                             {filteredCorrections.length > 0 && (
+                                                 <button 
+                                                    onClick={() => handleBulkRevert(filteredCorrections.map(fc => fc.id))}
+                                                    className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white border border-red-500/20 px-4 py-1.5 rounded-lg text-sm font-bold transition flex items-center gap-2"
+                                                 >
+                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                                     {language === 'ar' ? 'إلغاء التقييمات للنتائج المعروضة' : 'Revert Filtered Evaluations'}
+                                                 </button>
+                                             )}
+                                         </div>
+                                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                                             {filteredCorrections.length === 0 ? (
+                                                  <div className="text-center text-gray-500 py-10">{language === 'ar' ? 'لا توجد تقييمات مطابقة.' : 'No evaluations match your search.'}</div>
+                                             ) : filteredCorrections.map(correction => (
+                                                 <div key={correction.id} className="bg-gray-900 border border-gray-700 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                                     <div className="flex flex-col">
+                                                         <div className="flex items-center gap-3 mb-1">
+                                                             <span className="text-white font-bold text-lg">{correction.name}</span>
+                                                             <span className={`font-bold text-xs px-2 py-0.5 rounded ${correction.status === 'HALAL' ? 'bg-emerald-500/20 text-emerald-400' : correction.status === 'HARAM' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                                 {correction.status}
+                                                             </span>
+                                                         </div>
+                                                         <div className="text-gray-400 text-xs flex items-center gap-3">
+                                                             <span className="flex items-center gap-1">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                                                                {correction.approved_by_email || 'Unknown'}
+                                                             </span>
+                                                             <span className="flex items-center gap-1">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z" /></svg>
+                                                                {correction.timestamp ? correction.timestamp.toDate().toLocaleString() : 'N/A'}
+                                                             </span>
+                                                         </div>
+                                                     </div>
+                                                     <button 
+                                                         onClick={() => {
+                                                             if(window.confirm(language === 'ar' ? 'هل أنت متأكد من إلغاء هذا التقييم وإعادته لتحليل الذكاء الاصطناعي؟' : 'Are you sure you want to revert this evaluation back to AI?')) {
+                                                                 handleRevertCorrection(correction.id);
+                                                             }
+                                                         }}
+                                                         className="text-red-400 hover:text-white p-2.5 bg-red-500/10 hover:bg-red-500/80 rounded-xl transition-colors whitespace-nowrap self-end md:self-auto flex items-center justify-center border border-red-500/20"
+                                                         title="Revert Evaluation"
+                                                     >
+                                                        {language === 'ar' ? 'إلغاء التقييم' : 'Revert'}
+                                                     </button>
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     </>
+                                 );
+                             })()}
+                         </>
+                     )}
+                 </div>
              </div>
           ) : activeTab === 'rules' ? (
              <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-lg flex flex-col gap-6">
