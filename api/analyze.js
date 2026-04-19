@@ -292,8 +292,8 @@ Output: JSON ONLY. No Markdown.
     for (let i = 0; i < retries; i++) {
         try {
             modelResponse = await ai.models.generateContent({
-              // Updated to lightweight, ultra-fast model as per user request for speed
-              model: "gemini-2.5-flash-8b",
+              // Use the official ultra-fast lite preview model
+              model: "gemini-3.1-flash-lite-preview",
               contents: { parts: parts },
               config: {
                 systemInstruction: systemInstruction,
