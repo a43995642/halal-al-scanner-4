@@ -97,8 +97,8 @@ service cloud.firestore {
     }
 
     match /app_settings/{document=**} {
-      // Only admins can read/write global settings like rules
-      allow read, write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /ingredient_cache/{ingredientId} {

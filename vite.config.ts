@@ -105,8 +105,7 @@ export default defineConfig(() => {
   return {
     plugins: [
       react(),
-      copyRootAssets(),
-      vercelApiPlugin()
+      copyRootAssets()
     ],
     // Ensure relative paths for Android WebView
     base: './',

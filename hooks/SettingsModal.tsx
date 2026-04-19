@@ -11,13 +11,13 @@ import packageJson from '../package.json'; // Fixed import path
 import { useAlert } from '../contexts/AlertContext';
 
 // Reusing URL logic from geminiService to ensure consistency
-const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4-r5hd.vercel.app'; 
+const CLOUD_RUN_PROJECT_URL = 'https://ais-pre-jplc37xo6vkylwk36rlqka-4975474485.europe-west2.run.app'; 
 const getBaseUrl = () => {
-  if (Capacitor.isNativePlatform()) return VERCEL_PROJECT_URL.replace(/\/$/, '');
+  if (Capacitor.isNativePlatform()) return CLOUD_RUN_PROJECT_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined') {
      const host = window.location.hostname;
      if (host === 'localhost' || host.startsWith('192.168') || host.startsWith('10.')) {
-        return VERCEL_PROJECT_URL.replace(/\/$/, '');
+        return CLOUD_RUN_PROJECT_URL.replace(/\/$/, '');
      }
   }
   return '';

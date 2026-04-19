@@ -2,7 +2,7 @@
 // Vercel Serverless Function
 // This runs on the server. The API Key is SAFE here.
 
-import { GoogleGenAI, Type } from "@google/genai";
+    import { GoogleGenAI, Type } from "@google/genai";
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
@@ -76,9 +76,9 @@ export default async function handler(request, response) {
         } catch(e) {}
     }
     
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey || apiKey === 'AI Studio Free Tier') {
       console.error("Server missing API Key");
       return response.status(500).json({ 
         error: 'CONFIGURATION_ERROR', 

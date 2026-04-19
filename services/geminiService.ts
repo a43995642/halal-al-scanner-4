@@ -5,17 +5,18 @@ import { checkLocalHaram, checkLocalDatabase } from "./haramKeywords";
 import { secureStorage } from "../utils/secureStorage";
 import { resizeImageWorker } from "../utils/imageUtils";
 
-// ⚠️ الرابط المباشر للخادم (للأندرويد)
-const VERCEL_PROJECT_URL = 'https://halal-al-scanner-4-r5hd.vercel.app'; 
+// الرابط المباشر للخادم (Google Cloud Run)
+const CLOUD_RUN_PROJECT_URL = 'https://ais-pre-jplc37xo6vkylwk36rlqka-4975474485.europe-west2.run.app'; 
 
 // MUST MATCH PACKAGE.JSON VERSION
 const APP_VERSION = "2.2.0";
 
 const getBaseUrl = () => {
   if (Capacitor.isNativePlatform()) {
-    return VERCEL_PROJECT_URL.replace(/\/$/, '');
+    // Return Cloud Run URL for Native (Android/iOS)
+    return CLOUD_RUN_PROJECT_URL.replace(/\/$/, '');
   }
-  // For web (including localhost and run.app), use relative path to hit the local server
+  // For web (including localhost and Cloud Run), use relative path to hit the local Express server
   return '';
 };
 
