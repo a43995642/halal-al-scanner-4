@@ -113,16 +113,17 @@ export const analyzeImage = async (
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-        let targetWidth = 1500;
-        let targetQuality = 0.85;
+        // Optimized for Speed: Smaller base targets (1024 -> 800)
+        let targetWidth = 1024;
+        let targetQuality = 0.75;
 
         // Progressive downscaling on retry
         if (attempt === 1) {
-            targetWidth = 1024;
-            targetQuality = 0.7;
-        } else if (attempt === 2) {
             targetWidth = 800;
-            targetQuality = 0.6;
+            targetQuality = 0.65;
+        } else if (attempt === 2) {
+            targetWidth = 600;
+            targetQuality = 0.55;
         }
 
         const processedImages = await Promise.all(base64Images.map(async (img) => {
